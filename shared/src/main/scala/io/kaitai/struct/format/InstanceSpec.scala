@@ -20,12 +20,20 @@ object InstanceSpec {
         // value instance
         // TODO: check conflicts with all other keys
 
-        // Wrap everything in EnumById if "enum" is used
+        // Wrap everything in EnumById if "enum" is used and "value" contains an expression using
+        // integers, but take care of exceptions like "EnumByLabel" in some situations as well.
         val value2 = ParseUtils.getOptValueStr(srcMap, "enum", path) match {
           case None =>
             value
           case Some(enumName) =>
-            Ast.expr.EnumById(Ast.identifier(enumName), value)
+            value match {
+              case Ast.expr.IfExp(_, ifTrue: Ast.expr, _) =>
+                ifTrue match {
+                  case Ast.expr.EnumByLabel(_,_) => value
+                  case _ => Ast.expr.EnumById(Ast.identifier(enumName), value)
+                }
+              case _ => Ast.expr.EnumById(Ast.identifier(enumName), value)
+            }
         }
 
         val ifExpr = ParseUtils.getOptValueStr(srcMap, "if", path).map(Expressions.parse)
