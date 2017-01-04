@@ -371,15 +371,31 @@ class JavaCompiler(config: RuntimeConfig, out: LanguageOutputWriter)
         out.inc
         tryCatchForParseInstance = true
       }
-      case _ =>
+      case vi: ValueInstanceSpec => {
+        vi.value match {
+          case Ast.expr.Attribute(value: Ast.expr, attr: Ast.identifier) => {
+            val valType = translator.detectType(value)
+            valType match {
+              case KaitaiStreamType => {
+                out.puts
+                out.puts(s"try {")
+                out.inc
+                tryCatchForParseInstance = true
+              }
+              case _ =>
+            }
+          }
+          case _ =>
+        }
+      }
     }
   }
 
   override def instanceReturn(instName: InstanceIdentifier): Unit = {
     if (tryCatchForParseInstance) {
+      out.dec
       out.puts(s"} catch (IOException ex) { throw new RuntimeException(ex); }")
       out.puts
-      out.dec
       tryCatchForParseInstance = false
     }
 
