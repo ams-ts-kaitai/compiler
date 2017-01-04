@@ -287,6 +287,8 @@ class GraphvizClassCompiler(topClass: ClassSpec, out: LanguageOutputWriter) exte
         List()
       case expr.EnumByLabel(enumName, label) =>
         List()
+      case expr.EnumById(enumName, id) =>
+        affectedVars(id)
       case expr.Attribute(value, attr) =>
         val targetClass = translator.detectType(value)
         targetClass match {
@@ -308,6 +310,9 @@ class GraphvizClassCompiler(topClass: ClassSpec, out: LanguageOutputWriter) exte
         affectedVars(value) ++ affectedVars(idx)
       case SwitchType.ELSE_CONST =>
         // "_" is a special const for
+        List()
+      case expr.Name(Ast.identifier("_io")) =>
+        // "_io" is a special const too
         List()
       case expr.Name(id) =>
         List(resolveLocalNode(id.name))
@@ -410,6 +415,8 @@ object GraphvizClassCompiler extends LanguageCompilerStatic {
         if (!eosError)
           args += "ignore EOS"
         s"strz(${args.mkString(", ")})"
+      case EnumType(name, basedOn) =>
+        s"${dataTypeName(basedOn)}→${type2display(name)}"
       case _ => dataType.toString
     }
   }

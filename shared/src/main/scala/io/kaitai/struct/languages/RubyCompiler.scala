@@ -137,19 +137,21 @@ class RubyCompiler(config: RuntimeConfig, out: LanguageOutputWriter)
   override def popPos(io: String): Unit =
     out.puts(s"$io.seek(_pos)")
 
-  override def attrDebugStart(attrId: Identifier, attrType: BaseType, io: String, rep: RepeatSpec): Unit = {
-    val name = attrId match {
-      case NamedIdentifier(name) => name
-      case InstanceIdentifier(name) => name
-      case _: RawIdentifier | _: SpecialIdentifier => return
-    }
-    rep match {
-      case NoRepeat =>
-        out.puts(s"(@_debug['$name'] ||= {})[:start] = $io.pos")
-      case _: RepeatExpr =>
-        out.puts(s"(@_debug['$name'][:arr] ||= [])[i] = {:start => $io.pos}")
-      case RepeatEos | _: RepeatUntil =>
-        out.puts(s"(@_debug['$name'][:arr] ||= [])[${privateMemberName(attrId)}.size] = {:start => $io.pos}")
+  override def attrDebugStart(attrId: Identifier, attrType: BaseType, ios: Option[String], rep: RepeatSpec): Unit = {
+    ios.foreach { (io) =>
+      val name = attrId match {
+        case NamedIdentifier(name) => name
+        case InstanceIdentifier(name) => name
+        case _: RawIdentifier | _: SpecialIdentifier => return
+      }
+      rep match {
+        case NoRepeat =>
+          out.puts(s"(@_debug['$name'] ||= {})[:start] = $io.pos")
+        case _: RepeatExpr =>
+          out.puts(s"(@_debug['$name'][:arr] ||= [])[i] = {:start => $io.pos}")
+        case RepeatEos | _: RepeatUntil =>
+          out.puts(s"(@_debug['$name'][:arr] ||= [])[${privateMemberName(attrId)}.size] = {:start => $io.pos}")
+      }
     }
   }
 
@@ -239,6 +241,8 @@ class RubyCompiler(config: RuntimeConfig, out: LanguageOutputWriter)
         s"$io.read_bytes(${expression(size)})"
       case BytesEosType(_) =>
         s"$io.read_bytes_full"
+      case BitsType(width: Int) =>
+        s"$io.read_bits_int($width)"
       case t: UserType =>
         val addArgs = if (t.isOpaque) "" else ", self, @_root"
         s"${type2class(t.name.last)}.new($io$addArgs)"

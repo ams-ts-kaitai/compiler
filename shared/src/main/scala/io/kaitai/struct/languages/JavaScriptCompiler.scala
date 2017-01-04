@@ -8,6 +8,8 @@ import io.kaitai.struct.languages.components._
 import io.kaitai.struct.translators.{BaseTranslator, JavaScriptTranslator, TypeProvider}
 import io.kaitai.struct.{LanguageOutputWriter, RuntimeConfig, Utils}
 
+import scala.collection.mutable.ListBuffer
+
 class JavaScriptCompiler(config: RuntimeConfig, out: LanguageOutputWriter)
   extends LanguageCompiler(config, out)
     with ObjectOrientedLanguage
@@ -169,41 +171,29 @@ class JavaScriptCompiler(config: RuntimeConfig, out: LanguageOutputWriter)
   override def popPos(io: String): Unit =
     out.puts(s"$io.seek(_pos);")
 
-  def attrDebugName(attrId: Identifier, rep: RepeatSpec, end: Boolean): Option[String] = {
-    val name = attrId match {
-      case NamedIdentifier(name) => name
-      case InstanceIdentifier(name) => name
-      case _: RawIdentifier | _: SpecialIdentifier => return None
+  override def attrDebugStart(attrId: Identifier, attrType: BaseType, io: Option[String], rep: RepeatSpec): Unit = {
+    if (!attrDebugNeeded(attrId))
+      return
+
+    val debugName = attrDebugName(attrId, rep, false)
+
+    val ioProps = io match {
+      case None => ""
+      case Some(x) => s"start: $x.pos, ioOffset: $x._byteOffset"
     }
 
-    val arrIndexExpr = rep match {
-      case NoRepeat => ""
-      case _: RepeatExpr => ".arr[i]"
-      case RepeatEos | _: RepeatUntil => s".arr[${privateMemberName(attrId)}.length${if(end) " - 1" else ""}]"
-    }
-
-    Some(s"this._debug.${idToStr(attrId)}$arrIndexExpr")
-  }
-
-  override def attrDebugStart(attrId: Identifier, attrType: BaseType, io: String, rep: RepeatSpec): Unit = {
-    val debugName = attrDebugName(attrId, rep, false) match {
-      case None => return
-      case Some(x) => x
-    }
-
-    val attrTypeExtraExpr = attrType match {
-      case EnumType(name, _) => s""", enumName: \"${types2class(name)}\""""
+    val enumNameProps = attrType match {
+      case t: EnumType => s"""enumName: \"${types2class(t.enumSpec.get.name)}\""""
       case _ => ""
     }
 
-    out.puts(s"$debugName = { start: $io.pos$attrTypeExtraExpr };")
+    out.puts(s"$debugName = { $ioProps${if (ioProps != "" && enumNameProps != "") ", " else ""}$enumNameProps };")
   }
 
   override def attrDebugEnd(attrId: Identifier, attrType: BaseType, io: String, rep: RepeatSpec): Unit = {
-    val debugName = attrDebugName(attrId, rep, true) match {
-      case None => return
-      case Some(x) => x
-    }
+    if (!attrDebugNeeded(attrId))
+      return
+    val debugName = attrDebugName(attrId, rep, true)
 
     out.puts(s"$debugName.end = $io.pos;")
   }
@@ -301,7 +291,7 @@ class JavaScriptCompiler(config: RuntimeConfig, out: LanguageOutputWriter)
       case BytesEosType(_) =>
         s"$io.readBytesFull()"
       case t: UserType =>
-      	val addArgs = if (t.isOpaque) "" else ", this, this._root"
+        val addArgs = if (t.isOpaque) "" else ", this, this._root"
         s"new ${type2class(t.name.last)}($io$addArgs)"
     }
   }
@@ -362,6 +352,7 @@ class JavaScriptCompiler(config: RuntimeConfig, out: LanguageOutputWriter)
     enumColl.foreach { case (id, label) =>
       out.puts(s"${enumValue(enumName, label)}: $id,")
     }
+    out.puts
     enumColl.foreach { case (id, label) =>
       out.puts(s"""$id: "${enumValue(enumName, label)}",""")
     }
@@ -394,6 +385,22 @@ class JavaScriptCompiler(config: RuntimeConfig, out: LanguageOutputWriter)
       case NamedIdentifier(name) => Utils.lowerCamelCase(name)
       case InstanceIdentifier(name) => Utils.lowerCamelCase(name)
     }
+  }
+
+  private
+  def attrDebugNeeded(attrId: Identifier) = attrId match {
+    case _: NamedIdentifier | _: NumberedIdentifier | _: InstanceIdentifier => true
+    case _: RawIdentifier | _: SpecialIdentifier => false
+  }
+
+  def attrDebugName(attrId: Identifier, rep: RepeatSpec, end: Boolean) = {
+    val arrIndexExpr = rep match {
+      case NoRepeat => ""
+      case _: RepeatExpr => ".arr[i]"
+      case RepeatEos | _: RepeatUntil => s".arr[${privateMemberName(attrId)}.length${if (end) " - 1" else ""}]"
+    }
+
+    s"this._debug.${idToStr(attrId)}$arrIndexExpr"
   }
 }
 

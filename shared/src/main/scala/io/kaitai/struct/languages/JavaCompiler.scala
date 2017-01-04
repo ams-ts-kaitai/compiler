@@ -184,16 +184,18 @@ class JavaCompiler(config: RuntimeConfig, out: LanguageOutputWriter)
   override def popPos(io: String): Unit =
     out.puts(s"$io.seek(_pos);")
 
-  override def attrDebugStart(attrId: Identifier, attrType: BaseType, io: String, rep: RepeatSpec): Unit = {
-    val name = attrId match {
-      case _: RawIdentifier | _: SpecialIdentifier => return
-      case _ => idToStr(attrId)
-    }
-    rep match {
-      case NoRepeat =>
-        out.puts("_attrStart.put(\"" + name + "\", " + io + ".pos());")
-      case _: RepeatExpr | RepeatEos | _: RepeatUntil =>
-        getOrCreatePosList("_arrStart", name, io)
+  override def attrDebugStart(attrId: Identifier, attrType: BaseType, ios: Option[String], rep: RepeatSpec): Unit = {
+    ios.foreach { (io) =>
+      val name = attrId match {
+        case _: RawIdentifier | _: SpecialIdentifier => return
+        case _ => idToStr(attrId)
+      }
+      rep match {
+        case NoRepeat =>
+          out.puts("_attrStart.put(\"" + name + "\", " + io + ".pos());")
+        case _: RepeatExpr | RepeatEos | _: RepeatUntil =>
+          getOrCreatePosList("_arrStart", name, io)
+      }
     }
   }
 
@@ -299,6 +301,8 @@ class JavaCompiler(config: RuntimeConfig, out: LanguageOutputWriter)
         s"$io.readBytes(${expression(size)})"
       case BytesEosType(_) =>
         s"$io.readBytesFull()"
+      case BitsType(width: Int) =>
+        s"$io.readBitsInt($width)"
       case t: UserType =>
         val addArgs = if (t.isOpaque) "" else ", this, _root"
         s"new ${types2class(t.name)}($io$addArgs)"
@@ -475,6 +479,8 @@ object JavaCompiler extends LanguageCompilerStatic
       case FloatMultiType(Width4, _) => "float"
       case FloatMultiType(Width8, _) => "double"
 
+      case BitsType(_) => "long"
+
       case BooleanType => "boolean"
       case CalcIntType => "int"
       case CalcFloatType => "double"
@@ -516,6 +522,8 @@ object JavaCompiler extends LanguageCompilerStatic
 
       case FloatMultiType(Width4, _) => "Float"
       case FloatMultiType(Width8, _) => "Double"
+
+      case BitsType(_) => "Long"
 
       case BooleanType => "Boolean"
       case CalcIntType => "Integer"
