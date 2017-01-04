@@ -493,7 +493,7 @@ class CppCompiler(config: RuntimeConfig, outSrc: LanguageOutputWriter, outHdr: L
     outSrc.puts("}")
   }
 
-  override def instanceCheckCacheAndReturn(instName: InstanceIdentifier): Unit = {
+  override def instanceCheckCacheAndReturn(instName: InstanceIdentifier, instSpec: InstanceSpec): Unit = {
     outSrc.puts(s"if (${calculatedFlagForName(instName)})")
     outSrc.inc
     instanceReturn(instName)

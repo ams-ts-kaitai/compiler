@@ -19,6 +19,8 @@ class JavaCompiler(config: RuntimeConfig, out: LanguageOutputWriter)
     with NoNeedForFullClassPath {
   import JavaCompiler._
 
+  var tryCatchForParseInstance = false
+
   override def getStatic = JavaCompiler
 
   override def universalFooter: Unit = {
@@ -352,18 +354,35 @@ class JavaCompiler(config: RuntimeConfig, out: LanguageOutputWriter)
   }
 
   override def instanceHeader(className: String, instName: InstanceIdentifier, dataType: BaseType): Unit = {
-    out.puts(s"public ${kaitaiType2JavaTypeBoxed(dataType)} ${idToStr(instName)}() throws IOException {")
+    out.puts(s"public ${kaitaiType2JavaTypeBoxed(dataType)} ${idToStr(instName)}() {")
     out.inc
   }
 
-  override def instanceCheckCacheAndReturn(instName: InstanceIdentifier): Unit = {
+  override def instanceCheckCacheAndReturn(instName: InstanceIdentifier, instSpec: InstanceSpec): Unit = {
     out.puts(s"if (${privateMemberName(instName)} != null)")
     out.inc
     instanceReturn(instName)
     out.dec
+
+    instSpec match {
+      case pi: ParseInstanceSpec => {
+        out.puts
+        out.puts(s"try {")
+        out.inc
+        tryCatchForParseInstance = true
+      }
+      case _ =>
+    }
   }
 
   override def instanceReturn(instName: InstanceIdentifier): Unit = {
+    if (tryCatchForParseInstance) {
+      out.puts(s"} catch (IOException ex) { throw new RuntimeException(ex); }")
+      out.puts
+      out.dec
+      tryCatchForParseInstance = false
+    }
+
     out.puts(s"return ${privateMemberName(instName)};")
   }
 

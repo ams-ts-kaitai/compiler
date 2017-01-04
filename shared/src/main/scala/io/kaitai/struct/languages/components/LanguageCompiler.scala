@@ -100,7 +100,7 @@ abstract class LanguageCompiler(config: RuntimeConfig, out: LanguageOutputWriter
   def instanceDeclaration(attrName: InstanceIdentifier, attrType: BaseType, condSpec: ConditionalSpec) = attributeDeclaration(attrName, attrType, condSpec)
   def instanceHeader(className: List[String], instName: InstanceIdentifier, dataType: BaseType): Unit
   def instanceFooter: Unit
-  def instanceCheckCacheAndReturn(instName: InstanceIdentifier): Unit
+  def instanceCheckCacheAndReturn(instName: InstanceIdentifier, instSpec: InstanceSpec): Unit
   def instanceReturn(instName: InstanceIdentifier): Unit
   def instanceCalculate(instName: InstanceIdentifier, dataType: BaseType, value: Ast.expr)
 

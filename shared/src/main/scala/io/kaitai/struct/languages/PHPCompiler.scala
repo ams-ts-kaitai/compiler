@@ -266,7 +266,7 @@ class PHPCompiler(config: RuntimeConfig, out: LanguageOutputWriter)
     out.inc
   }
 
-  override def instanceCheckCacheAndReturn(instName: InstanceIdentifier): Unit = {
+  override def instanceCheckCacheAndReturn(instName: InstanceIdentifier, instSpec: InstanceSpec): Unit = {
     out.puts(s"if (${privateMemberName(instName)} !== null)")
     out.inc
     instanceReturn(instName)

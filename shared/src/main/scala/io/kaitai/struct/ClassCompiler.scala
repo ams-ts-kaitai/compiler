@@ -106,7 +106,7 @@ class ClassCompiler(val topClass: ClassSpec, val lang: LanguageCompiler) extends
 
     instSpec.doc.foreach((doc) => lang.attributeDoc(instName, doc))
     lang.instanceHeader(className, instName, dataType)
-    lang.instanceCheckCacheAndReturn(instName)
+    lang.instanceCheckCacheAndReturn(instName, instSpec)
 
     instSpec match {
       case vi: ValueInstanceSpec =>
