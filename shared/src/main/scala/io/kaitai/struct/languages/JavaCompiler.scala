@@ -19,8 +19,6 @@ class JavaCompiler(config: RuntimeConfig, out: LanguageOutputWriter)
     with NoNeedForFullClassPath {
   import JavaCompiler._
 
-  var tryCatchForParseInstance = false
-
   override def getStatic = JavaCompiler
 
   override def universalFooter: Unit = {
@@ -358,47 +356,49 @@ class JavaCompiler(config: RuntimeConfig, out: LanguageOutputWriter)
     out.inc
   }
 
-  override def instanceCheckCacheAndReturn(instName: InstanceIdentifier, instSpec: InstanceSpec): Unit = {
+  def instanceCalcBodyThrows(instSpec: InstanceSpec): Boolean = {
+    instSpec match {
+      case pi: ParseInstanceSpec => true
+      case vi: ValueInstanceSpec => {
+        vi.value match {
+          case Ast.expr.Attribute(value: Ast.expr, attr: Ast.identifier) => {
+            translator.detectType(value) match {
+              case KaitaiStreamType => true
+              case _ => false
+            }
+          }
+          case _ => false
+        }
+      }
+      case _ => false
+    }
+  }
+
+  override def instanceCalculateBegin(instSpec: InstanceSpec): Unit = {
+    if (instanceCalcBodyThrows(instSpec))
+    {
+      out.puts
+      out.puts(s"try {")
+      out.inc
+    }
+  }
+
+  override def instanceCalculateEnd(instSpec: InstanceSpec): Unit = {
+    if (instanceCalcBodyThrows(instSpec)) {
+      out.dec
+      out.puts(s"} catch (IOException ex) { throw new RuntimeException(ex); }")
+      out.puts
+    }
+  }
+
+  override def instanceCheckCacheAndReturn(instName: InstanceIdentifier): Unit = {
     out.puts(s"if (${privateMemberName(instName)} != null)")
     out.inc
     instanceReturn(instName)
     out.dec
-
-    instSpec match {
-      case pi: ParseInstanceSpec => {
-        out.puts
-        out.puts(s"try {")
-        out.inc
-        tryCatchForParseInstance = true
-      }
-      case vi: ValueInstanceSpec => {
-        vi.value match {
-          case Ast.expr.Attribute(value: Ast.expr, attr: Ast.identifier) => {
-            val valType = translator.detectType(value)
-            valType match {
-              case KaitaiStreamType => {
-                out.puts
-                out.puts(s"try {")
-                out.inc
-                tryCatchForParseInstance = true
-              }
-              case _ =>
-            }
-          }
-          case _ =>
-        }
-      }
-    }
   }
 
   override def instanceReturn(instName: InstanceIdentifier): Unit = {
-    if (tryCatchForParseInstance) {
-      out.dec
-      out.puts(s"} catch (IOException ex) { throw new RuntimeException(ex); }")
-      out.puts
-      tryCatchForParseInstance = false
-    }
-
     out.puts(s"return ${privateMemberName(instName)};")
   }
 

@@ -278,7 +278,7 @@ class RubyCompiler(config: RuntimeConfig, out: LanguageOutputWriter)
     out.inc
   }
 
-  override def instanceCheckCacheAndReturn(instName: InstanceIdentifier, instSpec: InstanceSpec): Unit = {
+  override def instanceCheckCacheAndReturn(instName: InstanceIdentifier): Unit = {
     out.puts(s"return ${privateMemberName(instName)} unless ${privateMemberName(instName)}.nil?")
   }
 

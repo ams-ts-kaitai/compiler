@@ -270,7 +270,7 @@ class PerlCompiler(config: RuntimeConfig, out: LanguageOutputWriter)
     out.puts("my ($self) = @_;")
   }
 
-  override def instanceCheckCacheAndReturn(instName: InstanceIdentifier, instSpec: InstanceSpec): Unit = {
+  override def instanceCheckCacheAndReturn(instName: InstanceIdentifier): Unit = {
     out.puts(s"return ${privateMemberName(instName)} if (${privateMemberName(instName)});")
   }
 

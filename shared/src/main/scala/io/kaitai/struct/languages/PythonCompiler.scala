@@ -218,7 +218,7 @@ class PythonCompiler(config: RuntimeConfig, out: LanguageOutputWriter)
     out.inc
   }
 
-  override def instanceCheckCacheAndReturn(instName: InstanceIdentifier, instSpec: InstanceSpec): Unit = {
+  override def instanceCheckCacheAndReturn(instName: InstanceIdentifier): Unit = {
     out.puts(s"if hasattr(self, '${idToStr(instName)}'):")
     out.inc
     instanceReturn(instName)

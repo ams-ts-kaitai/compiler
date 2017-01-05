@@ -283,7 +283,7 @@ class CSharpCompiler(config: RuntimeConfig, out: LanguageOutputWriter)
     out.puts("}")
   }
 
-  override def instanceCheckCacheAndReturn(instName: InstanceIdentifier, instSpec: InstanceSpec): Unit = {
+  override def instanceCheckCacheAndReturn(instName: InstanceIdentifier): Unit = {
     out.puts(s"if (${flagForInstName(instName)})")
     out.inc
     instanceReturn(instName)

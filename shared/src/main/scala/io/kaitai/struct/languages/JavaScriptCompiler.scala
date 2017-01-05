@@ -335,7 +335,7 @@ class JavaScriptCompiler(config: RuntimeConfig, out: LanguageOutputWriter)
     out.puts("});")
   }
 
-  override def instanceCheckCacheAndReturn(instName: InstanceIdentifier, instSpec: InstanceSpec): Unit = {
+  override def instanceCheckCacheAndReturn(instName: InstanceIdentifier): Unit = {
     out.puts(s"if (${privateMemberName(instName)} !== undefined)")
     out.inc
     instanceReturn(instName)
