@@ -107,7 +107,6 @@ class ClassCompiler(val topClass: ClassSpec, val lang: LanguageCompiler) extends
     instSpec.doc.foreach((doc) => lang.attributeDoc(instName, doc))
     lang.instanceHeader(className, instName, dataType)
     lang.instanceCheckCacheAndReturn(instName)
-    lang.instanceCalculateBegin(instSpec)
 
     instSpec match {
       case vi: ValueInstanceSpec =>
@@ -118,7 +117,6 @@ class ClassCompiler(val topClass: ClassSpec, val lang: LanguageCompiler) extends
         lang.attrParse(i, instName, extraAttrs)
     }
 
-    lang.instanceCalculateEnd(instSpec)
     lang.instanceSetCalculated(instName)
     lang.instanceReturn(instName)
     lang.instanceFooter

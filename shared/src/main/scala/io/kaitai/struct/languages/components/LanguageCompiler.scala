@@ -96,8 +96,6 @@ abstract class LanguageCompiler(config: RuntimeConfig, out: LanguageOutputWriter
   def popPos(io: String): Unit
 
   def instanceClear(instName: InstanceIdentifier): Unit = {}
-  def instanceCalculateBegin(instSpec: InstanceSpec): Unit = {}
-  def instanceCalculateEnd(instSpec: InstanceSpec): Unit = {}
   def instanceSetCalculated(instName: InstanceIdentifier): Unit = {}
   def instanceDeclaration(attrName: InstanceIdentifier, attrType: BaseType, condSpec: ConditionalSpec) = attributeDeclaration(attrName, attrType, condSpec)
   def instanceHeader(className: List[String], instName: InstanceIdentifier, dataType: BaseType): Unit
