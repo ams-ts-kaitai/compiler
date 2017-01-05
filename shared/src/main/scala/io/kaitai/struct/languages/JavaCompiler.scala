@@ -356,20 +356,39 @@ class JavaCompiler(config: RuntimeConfig, out: LanguageOutputWriter)
     out.inc
   }
 
+  def detectExprThrows(value: Ast.expr): Boolean = {
+    value match {
+      case Ast.expr.UnaryOp(_, v: Ast.expr)                     => detectExprThrows(v)
+      case Ast.expr.Compare(left: Ast.expr, _, right: Ast.expr) => detectExprThrows(left) || detectExprThrows(right)
+      case Ast.expr.BinOp(  left: Ast.expr, _, right: Ast.expr) => detectExprThrows(left) || detectExprThrows(right)
+      case Ast.expr.BoolOp(_, values: Seq[Ast.expr])            => detectExprThrows(values)
+      case Ast.expr.Call(func: Ast.expr, args: Seq[Ast.expr])   => detectExprThrows(args) || detectExprThrows(func)
+      case Ast.expr.Attribute(value: Ast.expr, attr: Ast.identifier) =>
+        val valType = translator.detectType(value)
+        valType match {
+          case KaitaiStreamType =>
+            attr.name match {
+              case "size" => true
+              case "eof"  => true
+              case "pos"  => true
+              case _      => false
+            }
+          case _ => false
+        }
+      case _ => false
+    }
+  }
+
+  def detectExprThrows(values: Seq[Ast.expr]): Boolean = {
+    values.map(   value => detectExprThrows(value))
+          .filter(value => value == true)
+          .size > 0
+  }
+
   def instanceCalcBodyThrows(instSpec: InstanceSpec): Boolean = {
     instSpec match {
       case pi: ParseInstanceSpec => true
-      case vi: ValueInstanceSpec => {
-        vi.value match {
-          case Ast.expr.Attribute(value: Ast.expr, attr: Ast.identifier) => {
-            translator.detectType(value) match {
-              case KaitaiStreamType => true
-              case _ => false
-            }
-          }
-          case _ => false
-        }
-      }
+      case vi: ValueInstanceSpec => detectExprThrows(vi.value)
       case _ => false
     }
   }
@@ -386,7 +405,9 @@ class JavaCompiler(config: RuntimeConfig, out: LanguageOutputWriter)
   override def instanceCalculateEnd(instSpec: InstanceSpec): Unit = {
     if (instanceCalcBodyThrows(instSpec)) {
       out.dec
-      out.puts(s"} catch (IOException ex) { throw new RuntimeException(ex); }")
+      out.puts(s"} catch (IOException ex) {")
+      out.inc
+      out.puts(s"throw new RuntimeException(ex); }")
       out.puts
     }
   }
