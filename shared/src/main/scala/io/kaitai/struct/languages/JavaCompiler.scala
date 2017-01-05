@@ -352,12 +352,7 @@ class JavaCompiler(config: RuntimeConfig, out: LanguageOutputWriter)
   }
 
   override def instanceHeader(className: String, instName: InstanceIdentifier, dataType: BaseType): Unit = {
-    val throwsClause = dataType match {
-      case t: UserType => s" throws IOException"
-      case _ => s""
-    }
-
-    out.puts(s"public ${kaitaiType2JavaTypeBoxed(dataType)} ${idToStr(instName)}()${throwsClause} {")
+    out.puts(s"public ${kaitaiType2JavaTypeBoxed(dataType)} ${idToStr(instName)}() throws IOException {")
     out.inc
   }
 
