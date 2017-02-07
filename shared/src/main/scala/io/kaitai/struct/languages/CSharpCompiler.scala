@@ -94,7 +94,7 @@ class CSharpCompiler(config: RuntimeConfig, out: LanguageOutputWriter)
   override def universalDoc(doc: String): Unit = {
     out.puts
     out.puts( "/// <summary><![CDATA[")
-    out.puts(s"/// $doc")
+    out.putsLines("/// ", doc)
     out.puts( "/// ]]></summary>")
   }
 
@@ -147,6 +147,9 @@ class CSharpCompiler(config: RuntimeConfig, out: LanguageOutputWriter)
 
   override def popPos(io: String): Unit =
     out.puts(s"$io.Seek(_pos);")
+
+  override def alignToByte(io: String): Unit =
+    out.puts(s"$io.AlignToByte();")
 
   override def instanceClear(instName: InstanceIdentifier): Unit = {
     out.puts(s"${flagForInstName(instName)} = false;")
@@ -234,7 +237,7 @@ class CSharpCompiler(config: RuntimeConfig, out: LanguageOutputWriter)
         s"$io.ReadBytes(${expression(size)})"
       case BytesEosType(_) =>
         s"$io.ReadBytesFull()"
-      case BitsType(1) =>
+      case BitsType1 =>
         s"$io.ReadBitsInt(1) != 0"
       case BitsType(width: Int) =>
         s"$io.ReadBitsInt($width)"
@@ -376,7 +379,7 @@ object CSharpCompiler extends LanguageCompilerStatic
       case FloatMultiType(Width4, _) => "float"
       case FloatMultiType(Width8, _) => "double"
 
-      case BitsType(1) => "bool"
+      case BitsType1 => "bool"
       case BitsType(_) => "ulong"
 
       case CalcIntType => "int"

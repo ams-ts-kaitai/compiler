@@ -109,7 +109,7 @@ class JavaScriptCompiler(config: RuntimeConfig, out: LanguageOutputWriter)
     // JSDoc docstring style: http://usejsdoc.org/about-getting-started.html
     out.puts
     out.puts( "/**")
-    out.puts(s" * $doc")
+    out.putsLines(" * ", doc)
     out.puts( " */")
   }
 
@@ -170,6 +170,9 @@ class JavaScriptCompiler(config: RuntimeConfig, out: LanguageOutputWriter)
 
   override def popPos(io: String): Unit =
     out.puts(s"$io.seek(_pos);")
+
+  override def alignToByte(io: String): Unit =
+    out.puts(s"$io.alignToByte();")
 
   override def attrDebugStart(attrId: Identifier, attrType: BaseType, io: Option[String], rep: RepeatSpec): Unit = {
     if (!attrDebugNeeded(attrId))
@@ -290,7 +293,7 @@ class JavaScriptCompiler(config: RuntimeConfig, out: LanguageOutputWriter)
         s"$io.readBytes(${expression(size)})"
       case BytesEosType(_) =>
         s"$io.readBytesFull()"
-      case BitsType(1) =>
+      case BitsType1 =>
         s"$io.readBitsInt(1) != 0"
       case BitsType(width: Int) =>
         s"$io.readBitsInt($width)"

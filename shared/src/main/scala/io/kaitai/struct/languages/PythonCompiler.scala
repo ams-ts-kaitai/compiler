@@ -113,6 +113,9 @@ class PythonCompiler(config: RuntimeConfig, out: LanguageOutputWriter)
   override def popPos(io: String): Unit =
     out.puts(s"$io.seek(_pos)")
 
+  override def alignToByte(io: String): Unit =
+    out.puts(s"$io.align_to_byte()")
+
   override def condIfHeader(expr: Ast.expr): Unit = {
     out.puts(s"if ${expression(expr)}:")
     out.inc
@@ -178,7 +181,7 @@ class PythonCompiler(config: RuntimeConfig, out: LanguageOutputWriter)
         s"$io.read_bytes(${expression(size)})"
       case BytesEosType(_) =>
         s"$io.read_bytes_full()"
-      case BitsType(1) =>
+      case BitsType1 =>
         s"$io.read_bits_int(1) != 0"
       case BitsType(width: Int) =>
         s"$io.read_bits_int($width)"

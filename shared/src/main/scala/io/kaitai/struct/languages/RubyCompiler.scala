@@ -81,7 +81,7 @@ class RubyCompiler(config: RuntimeConfig, out: LanguageOutputWriter)
   override def universalDoc(doc: String): Unit = {
     out.puts
     out.puts( "##")
-    out.puts(s"# $doc")
+    out.putsLines("# ", doc)
   }
 
   override def attrFixedContentsParse(attrName: Identifier, contents: String): Unit =
@@ -136,6 +136,9 @@ class RubyCompiler(config: RuntimeConfig, out: LanguageOutputWriter)
 
   override def popPos(io: String): Unit =
     out.puts(s"$io.seek(_pos)")
+
+  override def alignToByte(io: String): Unit =
+    out.puts(s"$io.align_to_byte")
 
   override def attrDebugStart(attrId: Identifier, attrType: BaseType, ios: Option[String], rep: RepeatSpec): Unit = {
     ios.foreach { (io) =>
@@ -241,7 +244,7 @@ class RubyCompiler(config: RuntimeConfig, out: LanguageOutputWriter)
         s"$io.read_bytes(${expression(size)})"
       case BytesEosType(_) =>
         s"$io.read_bytes_full"
-      case BitsType(1) =>
+      case BitsType1 =>
         s"$io.read_bits_int(1) != 0"
       case BitsType(width: Int) =>
         s"$io.read_bits_int($width)"
