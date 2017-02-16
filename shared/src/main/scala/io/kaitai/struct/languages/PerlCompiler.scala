@@ -35,6 +35,7 @@ class PerlCompiler(config: RuntimeConfig, out: LanguageOutputWriter)
     out.puts(s"use $kstructName;")
     out.puts(s"use $kstreamName;")
     out.puts("use Compress::Zlib;")
+    out.puts("use Encode;")
   }
 
   override def fileFooter(topClassName: String): Unit = {
@@ -216,17 +217,12 @@ class PerlCompiler(config: RuntimeConfig, out: LanguageOutputWriter)
     dataType match {
       case t: ReadableType =>
         s"$io->read_${t.apiCall}()"
-      // Aw, crap, can't use interpolated strings here: https://issues.scala-lang.org/browse/SI-6476
-      case StrByteLimitType(bs, encoding) =>
-        s"$io->read_str_byte_limit(${expression(bs)}, " + '"' + encoding + "\")"
-      case StrEosType(encoding) =>
-        io + "->read_str_eos(\"" + encoding + "\")"
-      case StrZType(encoding, terminator, include, consume, eosError) =>
-        io + "->read_strz(\"" + encoding + '"' + s", $terminator, ${boolLiteral(include)}, ${boolLiteral(consume)}, ${boolLiteral(eosError)})"
-      case BytesLimitType(size, _) =>
-        s"$io->read_bytes(${expression(size)})"
-      case BytesEosType(_) =>
+      case blt: BytesLimitType =>
+        s"$io->read_bytes(${expression(blt.size)})"
+      case _: BytesEosType =>
         s"$io->read_bytes_full()"
+      case BytesTerminatedType(terminator, include, consume, eosError, _) =>
+        s"$io->read_bytes_term($terminator, ${boolLiteral(include)}, ${boolLiteral(consume)}, ${boolLiteral(eosError)})"
       case BitsType1 =>
         s"$io->read_bits_int(1)"
       case BitsType(width: Int) =>
@@ -235,6 +231,18 @@ class PerlCompiler(config: RuntimeConfig, out: LanguageOutputWriter)
         val addArgs = if (!t.isOpaque) s", $$self, ${privateMemberName(RootIdentifier)}" else ""
         s"${types2class(t.classSpec.get.name)}->new($io$addArgs)"
     }
+  }
+
+  override def bytesPadTermExpr(expr0: String, padRight: Option[Int], terminator: Option[Int], include: Boolean) = {
+    val expr1 = padRight match {
+      case Some(padByte) => s"$kstreamName::bytes_strip_right($expr0, $padByte)"
+      case None => expr0
+    }
+    val expr2 = terminator match {
+      case Some(term) => s"$kstreamName::bytes_terminate($expr1, $term, ${boolLiteral(include)})"
+      case None => expr1
+    }
+    expr2
   }
 
   override def switchStart(id: Identifier, on: Ast.expr): Unit = {

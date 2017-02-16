@@ -33,9 +33,25 @@ class PythonCompiler(config: RuntimeConfig, out: LanguageOutputWriter)
     out.puts("import struct")
     out.puts("import zlib")
     out.puts("from enum import Enum")
+    out.puts("from pkg_resources import parse_version")
     out.puts
-    out.puts(s"from kaitaistruct import $kstructName, $kstreamName, BytesIO")
+    out.puts(s"from kaitaistruct import __version__ as ks_version, $kstructName, $kstreamName, BytesIO")
     out.puts
+    out.puts
+
+    // API compatibility check
+    out.puts(
+      "if parse_version(ks_version) < parse_version('" +
+        KSVersion.minimalRuntime +
+        "'):"
+    )
+    out.inc
+    out.puts(
+      "raise Exception(\"Incompatible Kaitai Struct Python API: " +
+        KSVersion.minimalRuntime +
+        " or later is required, but you have %s\" % (ks_version))"
+    )
+    out.dec
     out.puts
   }
 
@@ -170,17 +186,12 @@ class PythonCompiler(config: RuntimeConfig, out: LanguageOutputWriter)
     dataType match {
       case t: ReadableType =>
         s"$io.read_${t.apiCall}()"
-      // Aw, crap, can't use interpolated strings here: https://issues.scala-lang.org/browse/SI-6476
-      case StrByteLimitType(bs, encoding) =>
-        s"$io.read_str_byte_limit(${expression(bs)}, " + '"' + encoding + "\")"
-      case StrEosType(encoding) =>
-        io + ".read_str_eos(\"" + encoding + "\")"
-      case StrZType(encoding, terminator, include, consume, eosError) =>
-        io + ".read_strz(\"" + encoding + '"' + s", $terminator, ${bool2Py(include)}, ${bool2Py(consume)}, ${bool2Py(eosError)})"
-      case BytesLimitType(size, _) =>
-        s"$io.read_bytes(${expression(size)})"
-      case BytesEosType(_) =>
+      case blt: BytesLimitType =>
+        s"$io.read_bytes(${expression(blt.size)})"
+      case _: BytesEosType =>
         s"$io.read_bytes_full()"
+      case BytesTerminatedType(terminator, include, consume, eosError, _) =>
+        s"$io.read_bytes_term($terminator, ${bool2Py(include)}, ${bool2Py(consume)}, ${bool2Py(eosError)})"
       case BitsType1 =>
         s"$io.read_bits_int(1) != 0"
       case BitsType(width: Int) =>
@@ -189,6 +200,18 @@ class PythonCompiler(config: RuntimeConfig, out: LanguageOutputWriter)
         val addArgs = if (t.isOpaque) "" else ", self, self._root"
         s"${types2class(t.classSpec.get.name)}($io$addArgs)"
     }
+  }
+
+  override def bytesPadTermExpr(expr0: String, padRight: Option[Int], terminator: Option[Int], include: Boolean) = {
+    val expr1 = padRight match {
+      case Some(padByte) => s"$kstreamName.bytes_strip_right($expr0, $padByte)"
+      case None => expr0
+    }
+    val expr2 = terminator match {
+      case Some(term) => s"$kstreamName.bytes_terminate($expr1, $term, ${bool2Py(include)})"
+      case None => expr1
+    }
+    expr2
   }
 
   override def switchStart(id: Identifier, on: Ast.expr): Unit = {

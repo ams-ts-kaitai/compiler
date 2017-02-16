@@ -226,17 +226,12 @@ class CSharpCompiler(config: RuntimeConfig, out: LanguageOutputWriter)
     dataType match {
       case t: ReadableType =>
         s"$io.Read${Utils.capitalize(t.apiCall)}()"
-      // Aw, crap, can't use interpolated strings here: https://issues.scala-lang.org/browse/SI-6476
-      case StrByteLimitType(bs, encoding) =>
-        s"$io.ReadStrByteLimit(${expression(bs)}, " + '"' + encoding + "\")"
-      case StrEosType(encoding) =>
-        io + ".ReadStrEos(\"" + encoding + "\")"
-      case StrZType(encoding, terminator, include, consume, eosError) =>
-        io + ".ReadStrz(\"" + encoding + '"' + s", $terminator, $include, $consume, $eosError)"
-      case BytesLimitType(size, _) =>
-        s"$io.ReadBytes(${expression(size)})"
-      case BytesEosType(_) =>
+      case blt: BytesLimitType =>
+        s"$io.ReadBytes(${expression(blt.size)})"
+      case _: BytesEosType =>
         s"$io.ReadBytesFull()"
+      case BytesTerminatedType(terminator, include, consume, eosError, _) =>
+        s"$io.ReadBytesTerm($terminator, $include, $consume, $eosError)"
       case BitsType1 =>
         s"$io.ReadBitsInt(1) != 0"
       case BitsType(width: Int) =>
@@ -245,6 +240,18 @@ class CSharpCompiler(config: RuntimeConfig, out: LanguageOutputWriter)
         val addArgs = if (t.isOpaque) "" else s", this, ${privateMemberName(RootIdentifier)}"
         s"new ${types2class(t.name)}($io$addArgs)"
     }
+  }
+
+  override def bytesPadTermExpr(expr0: String, padRight: Option[Int], terminator: Option[Int], include: Boolean) = {
+    val expr1 = padRight match {
+      case Some(padByte) => s"$kstreamName.BytesStripRight($expr0, $padByte)"
+      case None => expr0
+    }
+    val expr2 = terminator match {
+      case Some(term) => s"$kstreamName.BytesTerminate($expr1, $term, $include)"
+      case None => expr1
+    }
+    expr2
   }
 
   override def switchStart(id: Identifier, on: Ast.expr): Unit =

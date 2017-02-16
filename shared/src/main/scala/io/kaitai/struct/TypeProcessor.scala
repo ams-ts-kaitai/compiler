@@ -13,8 +13,8 @@ object TypeProcessor {
 
     markupClassNames(topClass)
     resolveUserTypes(topClass)
-    deriveValueTypes(topClass)
     markupParentTypes(topClass)
+    deriveValueTypes(topClass)
     topClass.parentClass = GenericStructClassSpec
   }
 
@@ -42,14 +42,14 @@ object TypeProcessor {
     var iterNum = 1
     var hasChanged = false
     do {
-//      Console.println(s"... deriveValueType: iteration #$iterNum")
+      Log.typeProcValue.info(() => s"### deriveValueType: iteration #$iterNum")
       hasChanged = deriveValueType(provider, translator, topClass)
       iterNum += 1
     } while (hasChanged)
   }
 
   def deriveValueType(provider: ClassTypeProvider, translator: BaseTranslator, curClass: ClassSpec): Boolean = {
-//    Console.println(s"deriveValueType(${curClass.name.mkString("::")})")
+    Log.typeProcValue.info(() => s"deriveValueType(${curClass.nameAsStr})")
     var hasChanged = false
 
     provider.nowClass = curClass
@@ -62,11 +62,11 @@ object TypeProcessor {
                 try {
                   val viType = translator.detectType(vi.value)
                   vi.dataType = Some(viType)
-//                  Console.println(s"${instName.name} derived type: $viType")
+                  Log.typeProcValue.info(() => s"${instName.name} derived type: $viType")
                   hasChanged = true
                 } catch {
                   case tue: TypeUndecidedError =>
-//                    Console.println(s"${instName.name} type undecided: ${tue.getMessage}")
+                    Log.typeProcValue.info(() => s"${instName.name} type undecided: ${tue.getMessage}")
                     // just ignore, we're not there yet, probably we'll get it on next iteration
                 }
               case Some(_) =>
@@ -223,11 +223,23 @@ object TypeProcessor {
   // ==================================================================
 
   def markupParentTypes(curClass: ClassSpec): Unit = {
+    Log.typeProcParent.info(() => s"markupParentTypes(${curClass.nameAsStr})")
+
+    if (curClass.seq.nonEmpty)
+      Log.typeProcParent.info(() => s"... seq")
     curClass.seq.foreach { attr =>
       markupParentTypesAdd(curClass, attr.dataType)
     }
+
+    if (curClass.instances.nonEmpty)
+      Log.typeProcParent.info(() => s"... instances")
     curClass.instances.foreach { case (_, instSpec) =>
-      markupParentTypesAdd(curClass, getInstanceDataType(instSpec))
+      instSpec match {
+        case pis: ParseInstanceSpec =>
+          markupParentTypesAdd(curClass, pis.dataTypeComposite)
+        case _: ValueInstanceSpec =>
+          // value instances have no effect on parenting, just do nothing
+      }
     }
   }
 
@@ -249,6 +261,7 @@ object TypeProcessor {
   }
 
   def markupParentAs(curClass: ClassSpec, ut: UserType): Unit = {
+    Log.typeProcParent.info(() => s"..... class=$ut has parent=${curClass.nameAsStr}")
     ut.classSpec match {
       case Some(usedClass) =>
         markupParentAs(curClass, usedClass)

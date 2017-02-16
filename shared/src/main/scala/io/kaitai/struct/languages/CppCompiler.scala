@@ -44,6 +44,16 @@ class CppCompiler(config: RuntimeConfig, outSrc: LanguageOutputWriter, outHdr: L
     outHdr.puts("#include <stdint.h>")
     outHdr.puts("#include <vector>") // TODO: add only if required
     outHdr.puts("#include <sstream>") // TODO: add only if required
+
+    // API compatibility check
+    val minVer = KSVersion.minimalRuntime.toInt
+    outHdr.puts
+    outHdr.puts(s"#if KAITAI_STRUCT_VERSION < ${minVer}L")
+    outHdr.puts(
+      "#error \"Incompatible Kaitai Struct C++/STL API: version " +
+        KSVersion.minimalRuntime + " or later is required\""
+    )
+    outHdr.puts("#endif")
   }
 
   override def fileFooter(topClassName: String): Unit = {
@@ -382,17 +392,12 @@ class CppCompiler(config: RuntimeConfig, outSrc: LanguageOutputWriter, outHdr: L
     dataType match {
       case t: ReadableType =>
         s"$io->read_${t.apiCall}()"
-      // Aw, crap, can't use interpolated strings here: https://issues.scala-lang.org/browse/SI-6476
-      case StrByteLimitType(bs, encoding) =>
-        s"$io->read_str_byte_limit(${expression(bs)}, ${encodingToStr(encoding)})"
-      case StrEosType(encoding) =>
-        s"$io->read_str_eos(${encodingToStr(encoding)})"
-      case StrZType(encoding, terminator, include, consume, eosError) =>
-        s"$io->read_strz(${encodingToStr(encoding)}, $terminator, $include, $consume, $eosError)"
-      case BytesLimitType(size, _) =>
-        s"$io->read_bytes(${expression(size)})"
-      case BytesEosType(_) =>
+      case blt: BytesLimitType =>
+        s"$io->read_bytes(${expression(blt.size)})"
+      case _: BytesEosType =>
         s"$io->read_bytes_full()"
+      case BytesTerminatedType(terminator, include, consume, eosError, _) =>
+        s"$io->read_bytes_term($terminator, $include, $consume, $eosError)"
       case BitsType1 =>
         s"$io->read_bits_int(1)"
       case BitsType(width: Int) =>
@@ -403,7 +408,17 @@ class CppCompiler(config: RuntimeConfig, outSrc: LanguageOutputWriter, outHdr: L
     }
   }
 
-  def encodingToStr(encoding: String): String = "\"" + encoding + "\""
+  override def bytesPadTermExpr(expr0: String, padRight: Option[Int], terminator: Option[Int], include: Boolean) = {
+    val expr1 = padRight match {
+      case Some(padByte) => s"$kstreamName::bytes_strip_right($expr0, $padByte)"
+      case None => expr0
+    }
+    val expr2 = terminator match {
+      case Some(term) => s"$kstreamName::bytes_terminate($expr1, $term, $include)"
+      case None => expr1
+    }
+    expr2
+  }
 
   /**
     * Designates switch mode. If false, we're doing real switch-case for this
