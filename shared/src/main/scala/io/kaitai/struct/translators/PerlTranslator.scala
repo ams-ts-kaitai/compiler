@@ -1,11 +1,38 @@
 package io.kaitai.struct.translators
 
+import io.kaitai.struct.datatype.DataType
+import io.kaitai.struct.datatype.DataType._
 import io.kaitai.struct.exprlang.Ast
 import io.kaitai.struct.exprlang.Ast.expr
-import io.kaitai.struct.exprlang.DataType.{BaseType, IntType}
-import io.kaitai.struct.languages.PHPCompiler
+import io.kaitai.struct.format.Identifier
 
 class PerlTranslator(provider: TypeProvider) extends BaseTranslator(provider) {
+  // http://perldoc.perl.org/perlrebackslash.html#Character-Escapes
+  override val asciiCharQuoteMap: Map[Char, String] = Map(
+    '\t' -> "\\t",
+    '\n' -> "\\n",
+    '\r' -> "\\r",
+    '"' -> "\\\"",
+    '\\' -> "\\\\",
+
+    // Perl double-quoted interpolation variables
+    '$' -> "\\$",
+    '@' -> "\\@",
+    '%' -> "\\%",
+
+    '\7' -> "\\a",
+    '\f' -> "\\f",
+    '\33' -> "\\e",
+    '\b' -> "\\b"
+
+    // \v is available since 5.10, but according to documentation
+    // it's used for a class of "vertical tabulation" characters,
+    // not a single character
+  )
+
+  override def strLiteralUnicode(code: Char): String =
+    "\\N{U+%04x}".format(code.toInt)
+
   override def numericBinOp(left: Ast.expr, op: Ast.operator, right: Ast.expr) = {
     (detectType(left), detectType(right), op) match {
       case (_: IntType, _: IntType, Ast.operator.Div) =>
@@ -17,7 +44,7 @@ class PerlTranslator(provider: TypeProvider) extends BaseTranslator(provider) {
 
   override def doBoolLiteral(n: Boolean): String = if (n) "1" else "0"
 
-  override def doArrayLiteral(t: BaseType, value: Seq[expr]): String =
+  override def doArrayLiteral(t: DataType, value: Seq[expr]): String =
     "(" + value.map((v) => translate(v)).mkString(", ") + ")"
 
   override def doByteArrayLiteral(arr: Seq[Byte]): String =
@@ -35,7 +62,8 @@ class PerlTranslator(provider: TypeProvider) extends BaseTranslator(provider) {
 
   override def doName(s: String) = {
     s match {
-      case "_" => "$_"
+      case Identifier.ITERATOR => "$_"
+      case Identifier.ITERATOR2 => "$_buf"
       case _ => s"$s()"
     }
   }
@@ -78,6 +106,10 @@ class PerlTranslator(provider: TypeProvider) extends BaseTranslator(provider) {
       case _ => throw new UnsupportedOperationException(baseStr)
     }
   }
+  override def enumToInt(v: expr, et: EnumType): String =
+    translate(v)
+  override def boolToInt(v: expr): String =
+    translate(v)
   override def intToStr(i: Ast.expr, base: Ast.expr): String = {
     val baseStr = translate(base)
     val format = baseStr match {

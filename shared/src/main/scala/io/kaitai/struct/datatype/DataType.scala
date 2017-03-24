@@ -1,7 +1,9 @@
-package io.kaitai.struct.exprlang
+package io.kaitai.struct.datatype
 
-import io.kaitai.struct.exprlang.Ast.expr
+import io.kaitai.struct.exprlang.Ast
 import io.kaitai.struct.format._
+
+sealed trait DataType
 
 /**
   * A collection of case objects and classes that are used to represent internal
@@ -14,36 +16,17 @@ object DataType {
   case object Width4 extends IntWidth(4)
   case object Width8 extends IntWidth(8)
 
-  sealed trait Endianness
-  case object LittleEndian extends Endianness {
-    override def toString = "le"
-  }
-  case object BigEndian extends Endianness {
-    override def toString = "be"
-  }
-  object Endianness {
-    def fromString(s: Option[String], defaultEndian: Option[Endianness], dt: String, path: List[String]) = s match {
-      case Some("le") => LittleEndian
-      case Some("be") => BigEndian
-      case None =>
-        defaultEndian match {
-          case Some(e) => e
-          case None => throw new YAMLParseException(s"unable to use type '$dt' without default endianness", path ++ List("type"))
-        }
-    }
-  }
-
-  sealed trait BaseType
-
   /**
     * A common trait for all types that can be read with a simple,
     * parameterless KaitaiStream API call.
     */
-  trait ReadableType extends BaseType {
+  trait ReadableType extends DataType {
     def apiCall: String
   }
 
-  abstract class NumericType extends BaseType
+  abstract class NumericType extends DataType
+  abstract class BooleanType extends DataType
+
   abstract class IntType extends NumericType
   case object CalcIntType extends IntType
   case class Int1Type(signed: Boolean) extends IntType with ReadableType {
@@ -55,7 +38,7 @@ object DataType {
       s"$ch1${width.width}${endian.toString}"
     }
   }
-  case object BitsType1 extends BaseType
+  case object BitsType1 extends BooleanType
   case class BitsType(width: Int) extends IntType
 
   abstract class FloatType extends NumericType
@@ -70,7 +53,7 @@ object DataType {
     def process: Option[ProcessExpr]
   }
 
-  abstract class BytesType extends BaseType with Processing
+  abstract class BytesType extends DataType with Processing
   case object CalcBytesType extends BytesType {
     override def process = None
   }
@@ -96,41 +79,42 @@ object DataType {
     override val process: Option[ProcessExpr]
   ) extends BytesType
 
-  abstract class StrType extends BaseType
+  abstract class StrType extends DataType
   case object CalcStrType extends StrType
   case class StrFromBytesType(bytes: BytesType, encoding: String) extends StrType
 
-  case object BooleanType extends BaseType
-  case class ArrayType(elType: BaseType) extends BaseType
+  case object CalcBooleanType extends BooleanType
+  case class ArrayType(elType: DataType) extends DataType
 
-  abstract class UserType(val name: List[String]) extends BaseType {
+  abstract class UserType(val name: List[String], val forcedParent: Option[Ast.expr]) extends DataType {
     var classSpec: Option[ClassSpec] = None
-    def isOpaque = classSpec.get.meta match {
-      case None => false
-      case Some(meta) => meta.isOpaque
+    def isOpaque = {
+      val cs = classSpec.get
+      cs.isTopLevel || (cs.meta match {
+        case None => false
+        case Some(meta) => meta.isOpaque
+      })
     }
   }
-  case class UserTypeInstream(_name: List[String]) extends UserType(_name)
-  abstract class UserTypeKnownSize(_name: List[String]) extends UserType(_name) with Processing
-  case class UserTypeByteLimit(
+  case class UserTypeInstream(_name: List[String], _forcedParent: Option[Ast.expr]) extends UserType(_name, _forcedParent)
+  case class UserTypeFromBytes(
     _name: List[String],
-    size: Ast.expr,
+    _forcedParent: Option[Ast.expr],
+    bytes: BytesType,
     override val process: Option[ProcessExpr]
-  ) extends UserTypeKnownSize(_name)
-  case class UserTypeEos(
-    _name: List[String],
-    override val process: Option[ProcessExpr]
-  ) extends UserTypeKnownSize(_name)
+  ) extends UserType(_name, _forcedParent) with Processing
 
-  case object AnyType extends BaseType
-  case object KaitaiStructType extends BaseType
-  case object KaitaiStreamType extends BaseType
+  val USER_TYPE_NO_PARENT = Ast.expr.Bool(false)
 
-  case class EnumType(name: List[String], basedOn: IntType) extends BaseType {
+  case object AnyType extends DataType
+  case object KaitaiStructType extends DataType
+  case object KaitaiStreamType extends DataType
+
+  case class EnumType(name: List[String], basedOn: IntType) extends DataType {
     var enumSpec: Option[EnumSpec] = None
   }
 
-  case class SwitchType(on: Ast.expr, cases: Map[Ast.expr, BaseType]) extends BaseType
+  case class SwitchType(on: Ast.expr, cases: Map[Ast.expr, DataType]) extends DataType
 
   object SwitchType {
     /**
@@ -147,29 +131,13 @@ object DataType {
     dto: Option[String],
     path: List[String],
     metaDef: MetaDefaults,
-    size: Option[Ast.expr],
-    sizeEos: Boolean,
-    encoding: Option[String],
-    terminator: Option[Int],
-    include: Boolean,
-    consume: Boolean,
-    eosError: Boolean,
-    padRight: Option[Int],
-    contents: Option[Array[Byte]],
-    enumRef: Option[String],
-    process: Option[ProcessExpr]
-  ): BaseType = {
+    arg: YamlAttrArgs
+  ): DataType = {
     val r = dto match {
       case None =>
-        contents match {
-          case Some(c) => FixedBytesType(c, process)
-          case _ =>
-            getByteArrayType(
-              size, sizeEos,
-              terminator, include, consume, eosError,
-              padRight,
-              process, path
-            )
+        arg.contents match {
+          case Some(c) => FixedBytesType(c, arg.process)
+          case _ => arg.getByteArrayType(path)
         }
       case Some(dt) => dt match {
         case "u1" => Int1Type(false)
@@ -196,7 +164,7 @@ object DataType {
             Endianness.fromString(Option(endianStr), metaDef.endian, dt, path)
           )
         case ReBitType(widthStr) =>
-          (enumRef, widthStr.toInt) match {
+          (arg.enumRef, widthStr.toInt) match {
             case (None, 1) =>
               // if we're not inside enum and it's 1-bit type
               BitsType1
@@ -205,38 +173,31 @@ object DataType {
               BitsType(width)
           }
         case "str" | "strz" =>
-          val enc = getEncoding(encoding, metaDef, path)
+          val enc = getEncoding(arg.encoding, metaDef, path)
 
           // "strz" makes terminator = 0 by default
-          val term = if (dt == "strz") {
-            terminator.orElse(Some(0))
+          val arg2 = if (dt == "strz") {
+            arg.copy(terminator = arg.terminator.orElse(Some(0)))
           } else {
-            terminator
+            arg
           }
 
-          val bat = getByteArrayType(
-            size, sizeEos,
-            term, include, consume, eosError,
-            padRight,
-            process, path
-          )
+          val bat = arg2.getByteArrayType(path)
           StrFromBytesType(bat, enc)
         case _ =>
           val dtl = classNameToList(dt)
-          (size, sizeEos) match {
-            case (Some(bs: Ast.expr), false) => UserTypeByteLimit(dtl, bs, process)
-            case (None, true) => UserTypeEos(dtl, process)
-            case (None, false) =>
-              if (process.isDefined)
-                throw new YAMLParseException(s"user type '$dt': need either 'size' or 'size-eos' if 'process' is used", path)
-              UserTypeInstream(dtl)
-            case (Some(_), true) =>
-              throw new YAMLParseException(s"user type '$dt': only one of 'size' or 'size-eos' must be specified", path)
+          if (arg.size.isEmpty && !arg.sizeEos && arg.terminator.isEmpty) {
+            if (arg.process.isDefined)
+              throw new YAMLParseException(s"user type '$dt': need 'size' / 'size-eos' / 'terminator' if 'process' is used", path)
+            UserTypeInstream(dtl, arg.parent)
+          } else {
+            val bat = arg.getByteArrayType(path)
+            UserTypeFromBytes(dtl, arg.parent, bat, arg.process)
           }
       }
     }
 
-    enumRef match {
+    arg.enumRef match {
       case Some(enumName) =>
         r match {
           case numType: IntType => EnumType(classNameToList(enumName), numType)
@@ -245,34 +206,6 @@ object DataType {
         }
       case None =>
         r
-    }
-  }
-
-  private def getByteArrayType(
-    size: Option[expr],
-    sizeEos: Boolean,
-    terminator: Option[Int],
-    include: Boolean,
-    consume: Boolean,
-    eosError: Boolean,
-    padRight: Option[Int],
-    process: Option[ProcessExpr],
-    path: List[String]
-  ) = {
-    (size, sizeEos) match {
-      case (Some(bs: expr), false) =>
-        BytesLimitType(bs, terminator, include, padRight, process)
-      case (None, true) =>
-        BytesEosType(terminator, include, padRight, process)
-      case (None, false) =>
-        terminator match {
-          case Some(term) =>
-            BytesTerminatedType(term, include, consume, eosError, process)
-          case None =>
-            throw new YAMLParseException("'size', 'size-eos' or 'terminator' must be specified", path)
-        }
-      case (Some(_), true) =>
-        throw new YAMLParseException("only one of 'size' or 'size-eos' must be specified", path)
     }
   }
 

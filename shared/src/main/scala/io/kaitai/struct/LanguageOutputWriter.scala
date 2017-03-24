@@ -1,8 +1,5 @@
 package io.kaitai.struct
 
-import java.io.{File, FileOutputStream, OutputStreamWriter, PrintWriter}
-import java.nio.charset.StandardCharsets
-
 abstract class LanguageOutputWriter(indentStr: String) {
   var indentLevel = 0
 
@@ -21,23 +18,14 @@ abstract class LanguageOutputWriter(indentStr: String) {
     * as for docstrings.
     * @param prefix prefix to prepend to every line
     * @param lines lines as a string, joined by newline
+    * @param hanging prefix to prepend to every line except for the first
+    *                (i.e. hanging indent)
     */
-  def putsLines(prefix: String, lines: String): Unit = {
-    lines.split("\n").foreach((line) =>
-      puts(s"$prefix$line")
-    )
+  def putsLines(prefix: String, lines: String, hanging: String = ""): Unit = {
+    val strs = lines.split("\n")
+    puts(s"$prefix${strs(0)}")
+    strs.drop(1).foreach((line) => puts(s"$prefix$hanging$line"))
   }
-}
-
-class FileLanguageOutputWriter(fileName: String, indentStr: String) extends LanguageOutputWriter(indentStr) {
-  private val outDir = new File(fileName).getParentFile()
-  outDir.mkdirs
-  private val out = new PrintWriter(new OutputStreamWriter(new FileOutputStream(fileName), StandardCharsets.UTF_8), true)
-
-  override def add(other: StringLanguageOutputWriter) = out.write(other.result)
-  override def puts(s: String): Unit = out.println(indentNow + s)
-  override def puts: Unit = out.println
-  override def close = out.close
 }
 
 class StringLanguageOutputWriter(indentStr: String) extends LanguageOutputWriter(indentStr) {

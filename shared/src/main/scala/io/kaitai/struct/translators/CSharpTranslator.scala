@@ -1,13 +1,14 @@
 package io.kaitai.struct.translators
 
 import io.kaitai.struct.Utils
+import io.kaitai.struct.datatype.DataType
+import io.kaitai.struct.datatype.DataType._
 import io.kaitai.struct.exprlang.Ast
 import io.kaitai.struct.exprlang.Ast._
-import io.kaitai.struct.exprlang.DataType.{BaseType, Int1Type, IntType}
-import io.kaitai.struct.languages.{CSharpCompiler, CppCompiler}
+import io.kaitai.struct.languages.CSharpCompiler
 
 class CSharpTranslator(provider: TypeProvider) extends BaseTranslator(provider) {
-  override def doArrayLiteral(t: BaseType, value: Seq[expr]): String = {
+  override def doArrayLiteral(t: DataType, value: Seq[expr]): String = {
     val nativeType = CSharpCompiler.kaitaiType2NativeType(t)
     val commaStr = value.map((v) => translate(v)).mkString(", ")
     s"new List<$nativeType> { $commaStr }"
@@ -15,6 +16,22 @@ class CSharpTranslator(provider: TypeProvider) extends BaseTranslator(provider) 
 
   override def doByteArrayLiteral(arr: Seq[Byte]): String =
     s"new byte[] { ${arr.map(_ & 0xff).mkString(", ")} }"
+
+  override val asciiCharQuoteMap: Map[Char, String] = Map(
+    '\t' -> "\\t",
+    '\n' -> "\\n",
+    '\r' -> "\\r",
+    '"' -> "\\\"",
+    '\\' -> "\\\\",
+
+    '\0' -> "\\0",
+    '\7' -> "\\a",
+    '\f' -> "\\f",
+    '\13' -> "\\v",
+    '\b' -> "\\b"
+  )
+
+  override def strLiteralGenericCC(code: Char): String = strLiteralUnicode(code)
 
   override def numericBinOp(left: Ast.expr, op: Ast.operator, right: Ast.expr) = {
     (detectType(left), detectType(right), op) match {
@@ -55,10 +72,14 @@ class CSharpTranslator(provider: TypeProvider) extends BaseTranslator(provider) 
     s"${translate(container)}[${translate(idx)}]"
   override def doIfExp(condition: expr, ifTrue: expr, ifFalse: expr): String =
     s"(${translate(condition)} ? ${translate(ifTrue)} : ${translate(ifFalse)})"
+  override def doCast(value: Ast.expr, typeName: String): String =
+    s"((${Utils.upperCamelCase(typeName)}) (${translate(value)}))"
 
   // Predefined methods of various types
   override def strToInt(s: expr, base: expr): String =
     s"Convert.ToInt64(${translate(s)}, ${translate(base)})"
+  override def enumToInt(v: expr, et: EnumType): String =
+    translate(v)
   override def intToStr(i: expr, base: expr): String =
     s"Convert.ToString(${translate(i)}, ${translate(base)})"
   override def bytesToStr(bytesExpr: String, encoding: Ast.expr): String =

@@ -1,42 +1,51 @@
 package io.kaitai.struct
 
-import io.kaitai.struct.exprlang.DataType._
+import io.kaitai.struct.CompileLog.FileSuccess
+import io.kaitai.struct.datatype.DataType
+import io.kaitai.struct.datatype.DataType._
 import io.kaitai.struct.format._
-import io.kaitai.struct.languages._
 import io.kaitai.struct.languages.components.{LanguageCompiler, LanguageCompilerStatic}
 
 import scala.collection.mutable.ListBuffer
 
-class ClassCompiler(val topClass: ClassSpec, val lang: LanguageCompiler) extends AbstractCompiler {
+class ClassCompiler(
+  val topClass: ClassSpec,
+  config: RuntimeConfig,
+  langObj: LanguageCompilerStatic
+) extends AbstractCompiler {
   val provider = new ClassTypeProvider(topClass)
-
   val topClassName = topClass.name
+  val lang: LanguageCompiler = langObj.getCompiler(provider, config)
 
-  override def compile {
-    lang.open(topClassName.head, provider)
-
+  override def compile: CompileLog.SpecSuccess = {
     lang.fileHeader(topClassName.head)
     compileOpaqueClasses(topClass)
     compileClass(topClass)
     lang.fileFooter(topClassName.head)
-    lang.close
+
+    CompileLog.SpecSuccess(
+      lang.type2class(topClassName.head),
+      lang.results(topClass).map { case (fileName, contents) => FileSuccess(fileName, contents) }.toList
+    )
   }
 
   def compileOpaqueClasses(topClass: ClassSpec) = {
     TypeProcessor.getOpaqueClasses(topClass).foreach((classSpec) =>
-      lang.opaqueClassDeclaration(classSpec)
+      if (classSpec != topClass)
+        lang.opaqueClassDeclaration(classSpec)
     )
   }
 
   def compileClass(curClass: ClassSpec): Unit = {
     provider.nowClass = curClass
 
-    curClass.doc.foreach((doc) => lang.classDoc(curClass.name, doc))
+    if (!curClass.doc.isEmpty)
+      lang.classDoc(curClass.name, curClass.doc)
     lang.classHeader(curClass.name)
 
     val extraAttrs = ListBuffer[AttrSpec]()
-    extraAttrs += AttrSpec(RootIdentifier, UserTypeInstream(topClassName))
-    extraAttrs += AttrSpec(ParentIdentifier, UserTypeInstream(curClass.parentTypeName))
+    extraAttrs += AttrSpec(List(), RootIdentifier, UserTypeInstream(topClassName, None))
+    extraAttrs += AttrSpec(List(), ParentIdentifier, UserTypeInstream(curClass.parentTypeName, None))
 
     // Forward declarations for recursive types
     curClass.types.foreach { case (typeName, _) => lang.classForwardDeclaration(List(typeName)) }
@@ -74,7 +83,8 @@ class ClassCompiler(val topClass: ClassSpec, val lang: LanguageCompiler) extends
     // Attributes declarations and readers
     (curClass.seq ++ extraAttrs).foreach((attr) => lang.attributeDeclaration(attr.id, attr.dataTypeComposite, attr.cond))
     (curClass.seq ++ extraAttrs).foreach { (attr) =>
-      attr.doc.foreach((doc) => lang.attributeDoc(attr.id, doc))
+      if (!attr.doc.isEmpty)
+        lang.attributeDoc(attr.id, attr.doc)
       lang.attributeReader(attr.id, attr.dataTypeComposite, attr.cond)
     }
 
@@ -106,7 +116,7 @@ class ClassCompiler(val topClass: ClassSpec, val lang: LanguageCompiler) extends
 
   def compileInstance(className: List[String], instName: InstanceIdentifier, instSpec: InstanceSpec, extraAttrs: ListBuffer[AttrSpec]): Unit = {
     // Determine datatype
-    val dataType = TypeProcessor.getInstanceDataType(instSpec)
+    val dataType = instSpec.dataTypeComposite
 
     // Declare caching variable
     val condSpec = instSpec match {
@@ -115,7 +125,8 @@ class ClassCompiler(val topClass: ClassSpec, val lang: LanguageCompiler) extends
     }
     lang.instanceDeclaration(instName, dataType, condSpec)
 
-    instSpec.doc.foreach((doc) => lang.attributeDoc(instName, doc))
+    if (!instSpec.doc.isEmpty)
+      lang.attributeDoc(instName, instSpec.doc)
     lang.instanceHeader(className, instName, dataType)
     lang.instanceCheckCacheAndReturn(instName)
 
@@ -137,73 +148,10 @@ class ClassCompiler(val topClass: ClassSpec, val lang: LanguageCompiler) extends
     lang.enumDeclaration(curClass.name, enumColl.name.last, enumColl.sortedSeq)
   }
 
-  def isUnalignedBits(dt: BaseType) =
+  def isUnalignedBits(dt: DataType): Boolean =
     dt match {
       case _: BitsType | BitsType1 => true
+      case et: EnumType => isUnalignedBits(et.basedOn)
       case _ => false
     }
-}
-
-object ClassCompiler {
-  def fromClassSpecToFile(topClass: ClassSpec, lang: LanguageCompilerStatic, outDir: String, conf: RuntimeConfig): AbstractCompiler = {
-    val config = updateConfig(conf, topClass)
-    val outPath = lang.outFilePath(config, outDir, topClass.name.head)
-    Log.fileOps.info(() => s"... => $outPath")
-    lang match {
-      case GraphvizClassCompiler =>
-        val out = new FileLanguageOutputWriter(outPath, lang.indent)
-        new GraphvizClassCompiler(topClass, out)
-      case CppCompiler =>
-        val outSrc = new FileLanguageOutputWriter(s"$outPath.cpp", lang.indent)
-        val outHdr = new FileLanguageOutputWriter(s"$outPath.h", lang.indent)
-        new ClassCompiler(topClass, new CppCompiler(config, outSrc, outHdr))
-      case _ =>
-        val out = new FileLanguageOutputWriter(outPath, lang.indent)
-        new ClassCompiler(topClass, getCompiler(lang, config, out))
-    }
-  }
-
-  def fromClassSpecToString(topClass: ClassSpec, lang: LanguageCompilerStatic, conf: RuntimeConfig):
-    (StringLanguageOutputWriter, Option[StringLanguageOutputWriter], AbstractCompiler) = {
-    val config = updateConfig(conf, topClass)
-    lang match {
-      case GraphvizClassCompiler =>
-        val out = new StringLanguageOutputWriter(lang.indent)
-        (out, None, new GraphvizClassCompiler(topClass, out))
-      case CppCompiler =>
-        val outSrc = new StringLanguageOutputWriter(lang.indent)
-        val outHdr = new StringLanguageOutputWriter(lang.indent)
-        val cc = new ClassCompiler(topClass, new CppCompiler(config, outSrc, outHdr))
-        (outSrc, Some(outHdr), cc)
-      case _ =>
-        val out = new StringLanguageOutputWriter(lang.indent)
-        val cc = new ClassCompiler(topClass, getCompiler(lang, config, out))
-        (out, None, cc)
-    }
-  }
-
-  private def getCompiler(lang: LanguageCompilerStatic, config: RuntimeConfig, out: LanguageOutputWriter) = lang match {
-    case CSharpCompiler => new CSharpCompiler(config, out)
-    case JavaCompiler => new JavaCompiler(config, out)
-    case JavaScriptCompiler => new JavaScriptCompiler(config, out)
-    case PerlCompiler => new PerlCompiler(config, out)
-    case PHPCompiler => new PHPCompiler(config, out)
-    case PythonCompiler => new PythonCompiler(config, out)
-    case RubyCompiler => new RubyCompiler(config, out)
-  }
-
-  /**
-    * Updates runtime configuration with "enforcement" options that came from a source file itself.
-    * Currently only used to enforce debug when "ks-debug: true" is specified in top-level "meta" key.
-    * @param config original runtime configuration
-    * @param topClass top-level class spec
-    * @return updated runtime configuration with applied enforcements
-    */
-  private def updateConfig(config: RuntimeConfig, topClass: ClassSpec): RuntimeConfig = {
-    if (topClass.meta.get.forceDebug) {
-      config.copy(debug = true)
-    } else {
-      config
-    }
-  }
 }
