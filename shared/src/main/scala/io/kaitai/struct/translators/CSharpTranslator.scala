@@ -68,6 +68,9 @@ class CSharpTranslator(provider: TypeProvider) extends BaseTranslator(provider) 
     }
   }
 
+  override def doBytesCompareOp(left: Ast.expr, op: Ast.cmpop, right: Ast.expr): String =
+    s"(${CSharpCompiler.kstreamName}.ByteArrayCompare(${translate(left)}, ${translate(right)}) ${cmpOp(op)} 0)"
+
   override def doSubscript(container: expr, idx: expr): String =
     s"${translate(container)}[${translate(idx)}]"
   override def doIfExp(condition: expr, ifTrue: expr, ifFalse: expr): String =
@@ -99,8 +102,12 @@ class CSharpTranslator(provider: TypeProvider) extends BaseTranslator(provider) 
     s"${translate(a)}[0]"
   override def arrayLast(a: expr): String = {
     val v = translate(a)
-    s"$v[$v.Length - 1]"
+    s"$v[$v.Count - 1]"
   }
   override def arraySize(a: expr): String =
     s"${translate(a)}.Count"
+  override def arrayMin(a: Ast.expr): String =
+    s"${translate(a)}.Min()"
+  override def arrayMax(a: Ast.expr): String =
+    s"${translate(a)}.Max()"
 }

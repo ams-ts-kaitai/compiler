@@ -90,6 +90,17 @@ class JavaTranslator(provider: TypeProvider) extends BaseTranslator(provider) {
     }
   }
 
+  override def doBytesCompareOp(left: Ast.expr, op: Ast.cmpop, right: Ast.expr): String = {
+    op match {
+      case Ast.cmpop.Eq =>
+        s"Arrays.equals(${translate(left)}, ${translate(right)})"
+      case Ast.cmpop.NotEq =>
+        s"!Arrays.equals(${translate(left)}, ${translate(right)})"
+      case _ =>
+        s"(${JavaCompiler.kstreamName}.byteArrayCompare(${translate(left)}, ${translate(right)}) ${cmpOp(op)} 0)"
+    }
+  }
+
   override def doSubscript(container: expr, idx: expr): String = {
     val idxStr = translate(idx);
     val contStr = translate(container);
@@ -100,6 +111,7 @@ class JavaTranslator(provider: TypeProvider) extends BaseTranslator(provider) {
 
     s"${contStr}.get(${idxArgStr})"
   }
+
   override def doIfExp(condition: expr, ifTrue: expr, ifFalse: expr): String =
     s"(${translate(condition)} ? ${translate(ifTrue)} : ${translate(ifFalse)})"
   override def doCast(value: Ast.expr, typeName: String): String =
@@ -129,4 +141,8 @@ class JavaTranslator(provider: TypeProvider) extends BaseTranslator(provider) {
   }
   override def arraySize(a: expr): String =
     s"${translate(a)}.size()"
+  override def arrayMin(a: Ast.expr): String =
+    s"Collections.min(${translate(a)})"
+  override def arrayMax(a: Ast.expr): String =
+    s"Collections.max(${translate(a)})"
 }

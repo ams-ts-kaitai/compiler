@@ -40,6 +40,8 @@ abstract class BaseTranslator(val provider: TypeProvider) extends TypeDetector(p
             }
           case (_: StrType, _: StrType) =>
             doStrCompareOp(left, op, right)
+          case (_: BytesType, _: BytesType) =>
+            doBytesCompareOp(left, op, right)
           case (EnumType(ltype, _), EnumType(rtype, _)) =>
             if (ltype != rtype) {
               throw new TypeMismatchError(s"can't compare enums type $ltype and $rtype")
@@ -89,6 +91,8 @@ abstract class BaseTranslator(val provider: TypeProvider) extends TypeDetector(p
               case "first" => arrayFirst(value)
               case "last" => arrayLast(value)
               case "size" => arraySize(value)
+              case "min" => arrayMin(value)
+              case "max" => arrayMax(value)
             }
           case KaitaiStreamType =>
             attr.name match {
@@ -168,6 +172,9 @@ abstract class BaseTranslator(val provider: TypeProvider) extends TypeDetector(p
     s"${translate(left)} ${cmpOp(op)} ${translate(right)}"
 
   def doEnumCompareOp(left: Ast.expr, op: Ast.cmpop, right: Ast.expr): String =
+    s"${translate(left)} ${cmpOp(op)} ${translate(right)}"
+
+  def doBytesCompareOp(left: Ast.expr, op: Ast.cmpop, right: Ast.expr): String =
     s"${translate(left)} ${cmpOp(op)} ${translate(right)}"
 
   def cmpOp(op: Ast.cmpop): String = {
@@ -303,6 +310,8 @@ abstract class BaseTranslator(val provider: TypeProvider) extends TypeDetector(p
   def arrayFirst(a: Ast.expr): String
   def arrayLast(a: Ast.expr): String
   def arraySize(a: Ast.expr): String
+  def arrayMin(a: Ast.expr): String
+  def arrayMax(a: Ast.expr): String
 
   def kaitaiStreamSize(value: Ast.expr): String = userTypeField(value, "size")
   def kaitaiStreamEof(value: Ast.expr): String = userTypeField(value, "is_eof")
