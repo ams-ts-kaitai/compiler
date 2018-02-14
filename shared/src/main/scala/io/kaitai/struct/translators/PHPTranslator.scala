@@ -41,13 +41,14 @@ class PHPTranslator(provider: TypeProvider, config: RuntimeConfig) extends BaseT
     }
   }
 
-  override def userTypeField(value: expr, attrName: String): String =
+  override def anyField(value: expr, attrName: String): String =
     s"${translate(value)}->${doName(attrName)}"
 
   override def doLocalName(s: String) = {
     s match {
       case Identifier.ITERATOR => "$_"
       case Identifier.ITERATOR2 => "$_buf"
+      case Identifier.INDEX => "$i"
       case _ => s"$$this->${doName(s)}"
     }
   }
@@ -78,6 +79,9 @@ class PHPTranslator(provider: TypeProvider, config: RuntimeConfig) extends BaseT
     translate(v)
 
   override def boolToInt(v: expr): String =
+    s"intval(${translate(v)})"
+
+  override def floatToInt(v: expr): String =
     s"intval(${translate(v)})"
 
   override def intToStr(i: expr, base: expr): String = {

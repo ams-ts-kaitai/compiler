@@ -1,11 +1,12 @@
 package io.kaitai.struct.translators
 
+import io.kaitai.struct.ImportList
 import io.kaitai.struct.datatype.DataType
 import io.kaitai.struct.datatype.DataType._
 import io.kaitai.struct.exprlang.Ast
 import io.kaitai.struct.format.Identifier
 
-class PerlTranslator(provider: TypeProvider) extends BaseTranslator(provider) {
+class PerlTranslator(provider: TypeProvider, importList: ImportList) extends BaseTranslator(provider) {
   // http://perldoc.perl.org/perlrebackslash.html#Character-Escapes
   override val asciiCharQuoteMap: Map[Char, String] = Map(
     '\t' -> "\\t",
@@ -49,12 +50,13 @@ class PerlTranslator(provider: TypeProvider) extends BaseTranslator(provider) {
   override def doByteArrayLiteral(arr: Seq[Byte]): String =
     s"pack('C*', (${arr.map(_ & 0xff).mkString(", ")}))"
 
-  override def userTypeField(value: Ast.expr, attrName: String): String =
+  override def anyField(value: Ast.expr, attrName: String): String =
     s"${translate(value)}->${doName(attrName)}"
 
   override def doLocalName(s: String) = {
     s match {
       case "_" | "_on" => "$" + s
+      case Identifier.INDEX => doName(s)
       case _ => s"$$self->${doName(s)}"
     }
   }
@@ -63,6 +65,7 @@ class PerlTranslator(provider: TypeProvider) extends BaseTranslator(provider) {
     s match {
       case Identifier.ITERATOR => "$_"
       case Identifier.ITERATOR2 => "$_buf"
+      case Identifier.INDEX => "$i"
       case _ => s"$s()"
     }
   }
@@ -89,7 +92,7 @@ class PerlTranslator(provider: TypeProvider) extends BaseTranslator(provider) {
     doStrCompareOp(left, op, right)
 
   override def doSubscript(container: Ast.expr, idx: Ast.expr): String =
-    s"${translate(container)}[${translate(idx)}]"
+    s"@{${translate(container)}}[${translate(idx)}]"
   override def doIfExp(condition: Ast.expr, ifTrue: Ast.expr, ifFalse: Ast.expr): String =
     s"(${translate(condition)} ? ${translate(ifTrue)} : ${translate(ifFalse)})"
 
@@ -112,6 +115,8 @@ class PerlTranslator(provider: TypeProvider) extends BaseTranslator(provider) {
     translate(v)
   override def boolToInt(v: Ast.expr): String =
     translate(v)
+  override def floatToInt(v: Ast.expr): String =
+    s"int(${translate(v)})"
   override def intToStr(i: Ast.expr, base: Ast.expr): String = {
     val baseStr = translate(base)
     val format = baseStr match {
@@ -126,8 +131,10 @@ class PerlTranslator(provider: TypeProvider) extends BaseTranslator(provider) {
 
     s"sprintf('$format', ${translate(i)})"
   }
-  override def bytesToStr(bytesExpr: String, encoding: Ast.expr): String =
+  override def bytesToStr(bytesExpr: String, encoding: Ast.expr): String = {
+    importList.add("Encode")
     s"Encode::decode(${translate(encoding)}, $bytesExpr)"
+  }
   override def strLength(value: Ast.expr): String =
     s"length(${translate(value)})"
   override def strReverse(value: Ast.expr): String =
@@ -146,6 +153,7 @@ class PerlTranslator(provider: TypeProvider) extends BaseTranslator(provider) {
       case _: StrType => "minstr"
       case _ => "min"
     }
+    importList.add("List::Util")
     s"List::Util::$funcName(@{${translate(a)}})"
   }
   override def arrayMax(a: Ast.expr): String = {
@@ -153,6 +161,7 @@ class PerlTranslator(provider: TypeProvider) extends BaseTranslator(provider) {
       case _: StrType => "maxstr"
       case _ => "max"
     }
+    importList.add("List::Util")
     s"List::Util::$funcName(@{${translate(a)}})"
   }
 
