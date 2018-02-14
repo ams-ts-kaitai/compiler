@@ -270,8 +270,8 @@ class JavaCompiler(typeProvider: ClassTypeProvider, config: RuntimeConfig)
 
   override def condRepeatExprHeader(id: Identifier, io: String, dataType: DataType, needRaw: Boolean, repeatExpr: expr): Unit = {
     if (needRaw)
-      out.puts(s"${privateMemberName(RawIdentifier(id))} = new ArrayList<byte[]>(Long.valueOf(${expression(repeatExpr)}).intValue());")
-    out.puts(s"${idToStr(id)} = new ${kaitaiType2JavaType(ArrayType(dataType))}(Long.valueOf(${expression(repeatExpr)}).intValue());")
+      out.puts(s"${privateMemberName(RawIdentifier(id))} = new ArrayList<byte[]>((int) (${expression(repeatExpr)}));")
+    out.puts(s"${idToStr(id)} = new ${kaitaiType2JavaType(ArrayType(dataType))}((int) (${expression(repeatExpr)}));")
     out.puts(s"for (int i = 0; i < ${expression(repeatExpr)}; i++) {")
     out.inc
   }
@@ -530,7 +530,7 @@ object JavaCompiler extends LanguageCompilerStatic
       case BitsType(_) => "long"
 
       case _: BooleanType => "boolean"
-      case CalcIntType => "long"
+      case CalcIntType => "int"
       case CalcFloatType => "double"
 
       case _: StrType => "String"
@@ -574,7 +574,7 @@ object JavaCompiler extends LanguageCompilerStatic
       case BitsType(_) => "Long"
 
       case _: BooleanType => "Boolean"
-      case CalcIntType => "Long"
+      case CalcIntType => "Integer"
       case CalcFloatType => "Double"
 
       case _: StrType => "String"

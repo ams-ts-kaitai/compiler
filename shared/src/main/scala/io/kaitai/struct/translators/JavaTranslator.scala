@@ -9,42 +9,9 @@ import io.kaitai.struct.format.Identifier
 import io.kaitai.struct.languages.JavaCompiler
 
 class JavaTranslator(provider: TypeProvider) extends BaseTranslator(provider) {
-  override def doIntLiteral(n: BigInt): String = {
-    val literal = n.toString
-    val suffix = if (n > Int.MaxValue) "L" else ""
-
-    s"${literal}${suffix}"
-  }
-
-  /**
-   * Wrapper for {@link #doIntLiteral(BigInt)} if {@code CalcIntType} is known to be needed.
-   * <p>
-   * {@link #doIntLiteral(BigInt)} doesn't work for statements like {@code new ArrayList<Long>(Arrays.asList(0, 1, 100500))}
-   * because it doesn't know that a {@code long} is always needed, even if the value of the number
-   * wouldn't need it. Java by default assumes {@code int} for numeric literals and would create an
-   * array with a different type than required.
-   * </p>
-   */
-  def doIntLiteralCalcIntType(n: BigInt): String = {
-    val literal = doIntLiteral(n)
-    val isLong = JavaCompiler.kaitaiType2JavaTypePrim(CalcIntType) == "long"
-    val suffixNeeded = isLong && !literal.endsWith("L")
-    val suffix = if (suffixNeeded) "L" else ""
-
-    s"${literal}${suffix}"
-  }
-
   override def doArrayLiteral(t: DataType, value: Seq[expr]): String = {
     val javaType = JavaCompiler.kaitaiType2JavaTypeBoxed(t)
-    val values = t match {
-      case CalcIntType => value.map((v) => v match {
-        case Ast.expr.IntNum(n) => doIntLiteralCalcIntType(n)
-        case _ => throw new UnsupportedOperationException("CalcIntType should only be used for numbers.")
-      })
-      case _ => value.map((v) => translate(v))
-    }
-    val commaStr = values.mkString(", ")
-
+    val commaStr = value.map((v) => translate(v)).mkString(", ")
     s"new ArrayList<$javaType>(Arrays.asList($commaStr))"
   }
 
@@ -101,17 +68,8 @@ class JavaTranslator(provider: TypeProvider) extends BaseTranslator(provider) {
     }
   }
 
-  override def doSubscript(container: expr, idx: expr): String = {
-    val idxStr = translate(idx);
-    val contStr = translate(container);
-    val idxArgStr = idx match {
-      case Ast.expr.IntNum(_) => idxStr
-      case _ => s"Long.valueOf(${idxStr}).intValue()"
-    }
-
-    s"${contStr}.get(${idxArgStr})"
-  }
-
+  override def doSubscript(container: expr, idx: expr): String =
+    s"${translate(container)}.get((int) ${translate(idx)})"
   override def doIfExp(condition: expr, ifTrue: expr, ifFalse: expr): String =
     s"(${translate(condition)} ? ${translate(ifTrue)} : ${translate(ifFalse)})"
   override def doCast(value: Ast.expr, typeName: String): String =
