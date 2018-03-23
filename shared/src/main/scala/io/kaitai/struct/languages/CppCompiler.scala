@@ -857,7 +857,7 @@ class CppCompiler(
     }
   }
 
-  def type2class(name: String) = name + "_t"
+  override def type2class(className: String): String = CppCompiler.type2class(className)
 }
 
 object CppCompiler extends LanguageCompilerStatic with StreamStructNames {
@@ -869,10 +869,16 @@ object CppCompiler extends LanguageCompilerStatic with StreamStructNames {
   override def kstructName = "kaitai::kstruct"
   override def kstreamName = "kaitai::kstream"
 
-  def types2class(components: List[String]) = {
-    components.map {
-      case "kaitai_struct" => "kaitai::kstruct"
-      case s => s + "_t"
-    }.mkString("::")
+  def types2class(typeName: Ast.typeId) = {
+    typeName.names.map(type2class).mkString(
+      if (typeName.absolute) "::" else "",
+      "::",
+      ""
+    )
   }
+
+  def types2class(components: List[String]) =
+    components.map(type2class).mkString("::")
+
+  def type2class(name: String) = name + "_t"
 }
