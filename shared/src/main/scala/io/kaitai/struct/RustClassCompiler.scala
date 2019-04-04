@@ -3,46 +3,47 @@ package io.kaitai.struct
 import io.kaitai.struct.datatype.DataType.{KaitaiStreamType, UserTypeInstream}
 import io.kaitai.struct.datatype.{Endianness, FixedEndian, InheritedEndian}
 import io.kaitai.struct.format._
-import io.kaitai.struct.languages.GoCompiler
+import io.kaitai.struct.languages.RustCompiler
 import io.kaitai.struct.languages.components.ExtraAttrs
 
 import scala.collection.mutable.ListBuffer
 
-class GoClassCompiler(
+class RustClassCompiler(
   classSpecs: ClassSpecs,
   override val topClass: ClassSpec,
   config: RuntimeConfig
-) extends ClassCompiler(classSpecs, topClass, config, GoCompiler) {
+) extends ClassCompiler(classSpecs, topClass, config, RustCompiler) {
 
   override def compileClass(curClass: ClassSpec): Unit = {
     provider.nowClass = curClass
 
-    val extraAttrs = List(
-      AttrSpec(List(), IoIdentifier, KaitaiStreamType),
-      AttrSpec(List(), RootIdentifier, UserTypeInstream(topClassName, None)),
-      AttrSpec(List(), ParentIdentifier, curClass.parentType)
-    ) ++ ExtraAttrs.forClassSpec(curClass, lang)
+    val extraAttrs = ListBuffer[AttrSpec]()
+    extraAttrs += AttrSpec(List(), IoIdentifier, KaitaiStreamType)
+    extraAttrs += AttrSpec(List(), RootIdentifier, UserTypeInstream(topClassName, None))
+    extraAttrs += AttrSpec(List(), ParentIdentifier, curClass.parentType)
+
+    extraAttrs ++= ExtraAttrs.forClassSpec(curClass, lang)
 
     if (!curClass.doc.isEmpty)
       lang.classDoc(curClass.name, curClass.doc)
 
-    // Enums declaration defines types, so they need to go first
-    compileEnums(curClass)
-
     // Basic struct declaration
     lang.classHeader(curClass.name)
+    
     compileAttrDeclarations(curClass.seq ++ extraAttrs)
     curClass.instances.foreach { case (instName, instSpec) =>
       compileInstanceDeclaration(instName, instSpec)
     }
-    lang.classFooter(curClass.name)
-
+    
     // Constructor = Read() function
     compileReadFunction(curClass)
-
+    
     compileInstances(curClass)
 
     compileAttrReaders(curClass.seq ++ extraAttrs)
+    lang.classFooter(curClass.name)
+
+    compileEnums(curClass)
 
     // Recursive types
     compileSubclasses(curClass)
@@ -56,13 +57,24 @@ class GoClassCompiler(
       curClass.meta.endian.contains(InheritedEndian),
       curClass.params
     )
+
     // FIXME
     val defEndian = curClass.meta.endian match {
       case Some(fe: FixedEndian) => Some(fe)
       case _ => None
     }
+    
+    lang.readHeader(defEndian, false)
+    
     compileSeq(curClass.seq, defEndian)
     lang.classConstructorFooter
+  }
+
+  override def compileInstances(curClass: ClassSpec) = {
+    lang.instanceDeclHeader(curClass.name)
+    curClass.instances.foreach { case (instName, instSpec) =>
+      compileInstance(curClass.name, instName, instSpec, curClass.meta.endian)
+    }
   }
 
   override def compileInstance(className: List[String], instName: InstanceIdentifier, instSpec: InstanceSpec, endian: Option[Endianness]): Unit = {

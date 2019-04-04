@@ -4,29 +4,23 @@ import io.kaitai.struct.datatype.DataType._
 import io.kaitai.struct.exprlang.Ast
 import io.kaitai.struct.exprlang.Ast.expr
 import io.kaitai.struct.format.Identifier
-import io.kaitai.struct.languages.PHPCompiler
+import io.kaitai.struct.languages.RustCompiler
 import io.kaitai.struct.{RuntimeConfig, Utils}
 
-class PHPTranslator(provider: TypeProvider, config: RuntimeConfig) extends BaseTranslator(provider) {
+class RustTranslator(provider: TypeProvider, config: RuntimeConfig) extends BaseTranslator(provider) {
   override def doByteArrayLiteral(arr: Seq[Byte]): String =
-    "\"" + Utils.hexEscapeByteArray(arr) + "\""
+    "vec!([" + arr.map((x) =>
+    	     "%0#2x".format(x & 0xff)
+    ).mkString(", ") + "])"
   override def doByteArrayNonLiteral(elts: Seq[Ast.expr]): String =
     s"pack('C*', ${elts.map(translate).mkString(", ")})"
 
-  // http://php.net/manual/en/language.types.string.php#language.types.string.syntax.double
   override val asciiCharQuoteMap: Map[Char, String] = Map(
     '\t' -> "\\t",
     '\n' -> "\\n",
     '\r' -> "\\r",
     '"' -> "\\\"",
-    '\\' -> "\\\\",
-
-    // allowed and required to not trigger variable interpolation
-    '$' -> "\\$",
-
-    '\f' -> "\\f",
-    '\13' -> "\\v",
-    '\33' -> "\\e"
+    '\\' -> "\\\\"
   )
 
   override def strLiteralUnicode(code: Char): String =
@@ -35,27 +29,24 @@ class PHPTranslator(provider: TypeProvider, config: RuntimeConfig) extends BaseT
   override def numericBinOp(left: Ast.expr, op: Ast.operator, right: Ast.expr) = {
     (detectType(left), detectType(right), op) match {
       case (_: IntType, _: IntType, Ast.operator.Div) =>
-        s"intval(${translate(left)} / ${translate(right)})"
+        s"${translate(left)} / ${translate(right)}"
       case (_: IntType, _: IntType, Ast.operator.Mod) =>
-        s"${PHPCompiler.kstreamName}::mod(${translate(left)}, ${translate(right)})"
+        s"${translate(left)} % ${translate(right)}"
       case _ =>
         super.numericBinOp(left, op, right)
     }
   }
 
-  override def anyField(value: expr, attrName: String): String =
-    s"${translate(value)}->${doName(attrName)}"
-
   override def doLocalName(s: String) = {
     s match {
-      case Identifier.ITERATOR => "$_"
-      case Identifier.ITERATOR2 => "$_buf"
-      case Identifier.INDEX => "$i"
-      case _ => s"$$this->${doName(s)}"
+      case Identifier.ITERATOR => "tmpa"
+      case Identifier.ITERATOR2 => "tmpb"
+      case Identifier.INDEX => "i"
+      case _ => s"self.${doName(s)}"
     }
   }
 
-  override def doName(s: String) = s"${Utils.lowerCamelCase(s)}()"
+  override def doName(s: String) = s
 
   override def doEnumByLabel(enumTypeAbs: List[String], label: String): String = {
     val enumClass = types2classAbs(enumTypeAbs)
@@ -68,69 +59,71 @@ class PHPTranslator(provider: TypeProvider, config: RuntimeConfig) extends BaseT
   override def doSubscript(container: expr, idx: expr): String =
     s"${translate(container)}[${translate(idx)}]"
   override def doIfExp(condition: expr, ifTrue: expr, ifFalse: expr): String =
-    s"(${translate(condition)} ? ${translate(ifTrue)} : ${translate(ifFalse)})"
+    "if " + translate(condition) +
+    	" { " + translate(ifTrue) + " } else { " +
+	translate(ifFalse) + "}"
 
   // Predefined methods of various types
   override def strConcat(left: Ast.expr, right: Ast.expr): String =
-    s"${translate(left)} . ${translate(right)}"
+    "format!(\"{}{}\", " + translate(left) + ", " + translate(right) + ")"
 
   override def strToInt(s: expr, base: expr): String =
-    s"intval(${translate(s)}, ${translate(base)})"
+    translate(base) match {
+      case "10" =>
+        s"${translate(s)}.parse().unwrap()"
+      case _ =>
+        "panic!(\"Converting from string to int in base {} is unimplemented\"" + translate(base) + ")"
+    }
 
   override def enumToInt(v: expr, et: EnumType): String =
     translate(v)
 
   override def boolToInt(v: expr): String =
-    s"intval(${translate(v)})"
+    s"${translate(v)} as i32"
 
   override def floatToInt(v: expr): String =
-    s"intval(${translate(v)})"
+    s"${translate(v)} as i32"
 
   override def intToStr(i: expr, base: expr): String = {
     val baseStr = translate(base)
     baseStr match {
       case "10" =>
-        s"strval(${translate(i)})"
+        s"${translate(i)}.to_string()"
       case _ =>
         s"base_convert(strval(${translate(i)}), 10, $baseStr)"
     }
   }
   override def bytesToStr(bytesExpr: String, encoding: Ast.expr): String =
-    s"${PHPCompiler.kstreamName}::bytesToStr($bytesExpr, ${translate(encoding)})"
+    translate(encoding) match {
+      case "\"ASCII\"" =>
+        s"String::from_utf8_lossy($bytesExpr)"
+      case _ =>
+        "panic!(\"Unimplemented encoding for bytesToStr: {}\", " +
+	translate(encoding) + ")"
+    }
   override def bytesLength(b: Ast.expr): String =
-    s"strlen(${translate(b)})"
+    s"${translate(b)}.len()"
   override def strLength(s: expr): String =
-    s"strlen(${translate(s)})"
+    s"${translate(s)}.len()"
   override def strReverse(s: expr): String =
-    s"strrev(${translate(s)})"
+    s"${translate(s)}.graphemes(true).rev().flat_map(|g| g.chars()).collect()"
   override def strSubstring(s: expr, from: expr, to: expr): String =
     s"${translate(s)}.substring(${translate(from)}, ${translate(to)})"
 
   override def arrayFirst(a: expr): String =
-    s"${translate(a)}[0]"
-  override def arrayLast(a: expr): String = {
-    // For huge debate on efficiency of PHP last element of array methods, see:
-    // http://stackoverflow.com/a/41795859/487064
-    val v = translate(a)
-    s"$v[count($v) - 1]"
-  }
+    s"${translate(a)}.first()"
+  override def arrayLast(a: expr): String =
+    s"${translate(a)}.last()"
   override def arraySize(a: expr): String =
-    s"count(${translate(a)})"
+    s"${translate(a)}.len()"
   override def arrayMin(a: Ast.expr): String =
-    s"min(${translate(a)})"
+    s"${translate(a)}.iter().min()"
   override def arrayMax(a: Ast.expr): String =
-    s"max(${translate(a)})"
-
-  val namespaceRef = if (config.phpNamespace.isEmpty) {
-    ""
-  } else {
-    "\\" + config.phpNamespace
-  }
+    s"${translate(a)}.iter().max()"
 
   def types2classAbs(names: List[String]) =
     names match {
-      case List("kaitai_struct") => PHPCompiler.kstructName
-      case _ =>
-        namespaceRef + "\\" + PHPCompiler.types2classRel(names)
+      case List("kaitai_struct") => RustCompiler.kstructName
+      case _ => RustCompiler.types2classRel(names)
     }
 }
