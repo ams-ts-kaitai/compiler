@@ -613,6 +613,7 @@ object CSharpCompiler extends LanguageCompilerStatic
       case EnumType(name, _) => types2class(name)
 
       case ArrayType(inType) => s"List<${kaitaiType2NativeType(inType)}>"
+      case CalcArrayType(inType) => s"List<${kaitaiType2NativeType(inType)}>"
 
       case st: SwitchType => kaitaiType2NativeType(st.combinedType)
     }
