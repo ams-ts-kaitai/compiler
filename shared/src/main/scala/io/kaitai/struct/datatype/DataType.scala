@@ -46,8 +46,8 @@ object DataType {
       s"$ch1${width.width}${finalEnd.map(_.toSuffix).getOrElse("")}"
     }
   }
-  case object BitsType1 extends BooleanType
-  case class BitsType(width: Int) extends IntType
+  case class BitsType1(bitEndian: BitEndianness) extends BooleanType
+  case class BitsType(width: Int, bitEndian: BitEndianness) extends IntType
 
   abstract class FloatType extends NumericType
   case object CalcFloatType extends FloatType
@@ -66,7 +66,6 @@ object DataType {
   case object CalcBytesType extends BytesType {
     override def process = None
   }
-  case class FixedBytesType(contents: Array[Byte], override val process: Option[ProcessExpr]) extends BytesType
   case class BytesEosType(
     terminator: Option[Int],
     include: Boolean,
@@ -165,11 +164,13 @@ object DataType {
     override def isOwning = false
   }
 
-  case class ArrayType(elType: DataType) extends ComplexDataType {
+  abstract sealed class ArrayType(val elType: DataType) extends ComplexDataType
+
+  case class ArrayTypeInStream(_elType: DataType) extends ArrayType(_elType) {
     override def isOwning: Boolean = true
     override def asNonOwning: CalcArrayType = CalcArrayType(elType)
   }
-  case class CalcArrayType(elType: DataType) extends ComplexDataType {
+  case class CalcArrayType(_elType: DataType) extends ArrayType(_elType) {
     override def isOwning: Boolean = false
   }
 
@@ -292,8 +293,8 @@ object DataType {
 
   private val ReIntType = """([us])(2|4|8)(le|be)?""".r
   private val ReFloatType = """f(4|8)(le|be)?""".r
-  private val ReBitType = """b(\d+)""".r
-  private val ReUserTypeWithArgs = """(.+)\((.*)\)""".r
+  private val ReBitType = """b(\d+)(le|be)?""".r
+  private val ReUserTypeWithArgs = """^((?:[a-z][a-z0-9_]*::)*[a-z][a-z0-9_]*)\((.*)\)$""".r
 
   def fromYaml(
     dto: Option[String],
@@ -304,7 +305,7 @@ object DataType {
     val r = dto match {
       case None =>
         arg.contents match {
-          case Some(c) => FixedBytesType(c, arg.process)
+          case Some(c) => BytesLimitType(Ast.expr.IntNum(c.length), None, false, None, arg.process)
           case _ => arg.getByteArrayType(path)
         }
       case Some(dt) => dt match {
@@ -331,14 +332,19 @@ object DataType {
             },
             Endianness.fromString(Option(endianStr), metaDef.endian, dt, path)
           )
-        case ReBitType(widthStr) =>
+        case ReBitType(widthStr, bitEndianStr) =>
           (arg.enumRef, widthStr.toInt) match {
             case (None, 1) =>
               // if we're not inside enum and it's 1-bit type
-              BitsType1
+              BitsType1(
+                BitEndianness.fromString(Option(bitEndianStr), metaDef.bitEndian, dt, path)
+              )
             case (_, width) =>
               // either inside enum (any width) or (width != 1)
-              BitsType(width)
+              BitsType(
+                width,
+                BitEndianness.fromString(Option(bitEndianStr), metaDef.bitEndian, dt, path)
+              )
           }
         case "str" | "strz" =>
           val enc = getEncoding(arg.encoding, metaDef, path)
@@ -396,37 +402,52 @@ object DataType {
     case Some(dt) => pureFromString(dt)
   }
 
-  def pureFromString(dt: String): DataType = dt match {
-    case "bytes" => CalcBytesType
-    case "u1" => Int1Type(false)
-    case "s1" => Int1Type(true)
-    case RePureIntType(signStr, widthStr) =>
-      IntMultiType(
-        signStr match {
-          case "s" => true
-          case "u" => false
-        },
+  def pureFromString(dt: String): DataType = {
+    val arraySuffix = "[]"
+    val (isArray, singleId) = (dt.endsWith(arraySuffix), dt.stripSuffix(arraySuffix))
+    val singleType = singleId match {
+      case "bytes" => CalcBytesType
+      case "u1" => Int1Type(false)
+      case "s1" => Int1Type(true)
+      case RePureIntType(signStr, widthStr) =>
+        IntMultiType(
+          signStr match {
+            case "s" => true
+            case "u" => false
+          },
+          widthStr match {
+            case "2" => Width2
+            case "4" => Width4
+            case "8" => Width8
+          },
+          None
+        )
+      case RePureFloatType(widthStr) =>
+        FloatMultiType(
+          widthStr match {
+            case "4" => Width4
+            case "8" => Width8
+          },
+          None
+        )
+      case ReBitType(widthStr) =>
         widthStr match {
-          case "2" => Width2
-          case "4" => Width4
-          case "8" => Width8
-        },
-        None
-      )
-    case RePureFloatType(widthStr) =>
-      FloatMultiType(
-        widthStr match {
-          case "4" => Width4
-          case "8" => Width8
-        },
-        None
-      )
-    case "str" => CalcStrType
-    case "bool" => CalcBooleanType
-    case "struct" => CalcKaitaiStructType
-    case "io" => KaitaiStreamType
-    case "any" => AnyType
-    case _ => CalcUserType(classNameToList(dt), None)
+          // bit endianness is not applicable here (and the dependent code doesn't care about it), so why not assume big endian
+          case "1" => BitsType1(BigBitEndian)
+          case _ => BitsType(widthStr.toInt, BigBitEndian)
+        }
+      case "str" => CalcStrType
+      case "bool" => CalcBooleanType
+      case "struct" => CalcKaitaiStructType
+      case "io" => KaitaiStreamType
+      case "any" => AnyType
+      case _ => CalcUserType(classNameToList(singleId), None)
+    }
+    if (isArray) {
+      CalcArrayType(singleType)
+    } else {
+      singleType
+    }
   }
 
   def getEncoding(curEncoding: Option[String], metaDef: MetaSpec, path: List[String]): String = {
