@@ -1,6 +1,6 @@
 package io.kaitai.struct.languages.components
 
-import io.kaitai.struct.datatype.{DataType, Endianness, FixedEndian, InheritedEndian}
+import io.kaitai.struct.datatype.{DataType, Endianness, FixedEndian, InheritedEndian, NeedRaw}
 import io.kaitai.struct.exprlang.Ast
 import io.kaitai.struct.format._
 import io.kaitai.struct.translators.AbstractTranslator
@@ -11,7 +11,7 @@ import scala.collection.mutable.ListBuffer
 abstract class LanguageCompiler(
   typeProvider: ClassTypeProvider,
   val config: RuntimeConfig
-) extends SwitchOps
+) extends SwitchOps with ValidateOps
   with ExtraAttrs {
 
   val translator: AbstractTranslator
@@ -60,6 +60,7 @@ abstract class LanguageCompiler(
   def type2class(className: String): String
   def fileHeader(topClassName: String): Unit
   def fileFooter(topClassName: String): Unit = {}
+  def importFile(file: String): Unit = {}
 
   /**
     * Outputs declaration of "opaque class", i.e. class that will be referred to in this file, but
@@ -94,6 +95,7 @@ abstract class LanguageCompiler(
   def attrInit(attr: AttrLikeSpec): Unit = {}
   def attrDestructor(attr: AttrLikeSpec, id: Identifier): Unit = {}
 
+  // TODO: delete
   def attrFixedContentsParse(attrName: Identifier, contents: Array[Byte]): Unit
 
   def condIfSetNull(instName: Identifier): Unit = {}
@@ -101,16 +103,16 @@ abstract class LanguageCompiler(
   def condIfHeader(expr: Ast.expr): Unit
   def condIfFooter(expr: Ast.expr): Unit
 
-  def condRepeatEosHeader(id: Identifier, io: String, dataType: DataType, needRaw: Boolean): Unit
+  def condRepeatEosHeader(id: Identifier, io: String, dataType: DataType, needRaw: NeedRaw): Unit
   def condRepeatEosFooter: Unit
 
-  def condRepeatExprHeader(id: Identifier, io: String, dataType: DataType, needRaw: Boolean, repeatExpr: Ast.expr): Unit
+  def condRepeatExprHeader(id: Identifier, io: String, dataType: DataType, needRaw: NeedRaw, repeatExpr: Ast.expr): Unit
   def condRepeatExprFooter: Unit
 
-  def condRepeatUntilHeader(id: Identifier, io: String, dataType: DataType, needRaw: Boolean, repeatExpr: Ast.expr): Unit
-  def condRepeatUntilFooter(id: Identifier, io: String, dataType: DataType, needRaw: Boolean, repeatExpr: Ast.expr): Unit
+  def condRepeatUntilHeader(id: Identifier, io: String, dataType: DataType, needRaw: NeedRaw, repeatExpr: Ast.expr): Unit
+  def condRepeatUntilFooter(id: Identifier, io: String, dataType: DataType, needRaw: NeedRaw, repeatExpr: Ast.expr): Unit
 
-  def attrProcess(proc: ProcessExpr, varSrc: Identifier, varDest: Identifier): Unit
+  def attrProcess(proc: ProcessExpr, varSrc: Identifier, varDest: Identifier, rep: RepeatSpec): Unit
 
   def normalIO: String
   def useIO(ioEx: Ast.expr): String
@@ -138,6 +140,15 @@ abstract class LanguageCompiler(
     * @param seq sequence of attributes in a class
     */
   def debugClassSequence(seq: List[AttrSpec]) = {}
+
+  /**
+    * Generates custom member of the class (typically named `toString()` / `inspect` /
+    * `__repr__` / similar) that gets contents of all important members of the class
+    * as a single string. Usually used for debugging purposes / internal dumping mechanism.
+    * Custom expression to render can be specified with `to-string` type-level KSY key.
+    * @param toStringExpr custom expression in class context to render the string.
+    */
+  def classToString(toStringExpr: Ast.expr): Unit = {}
 
   def attrParseIfHeader(id: Identifier, ifExpr: Option[Ast.expr]): Unit = {
     ifExpr match {
