@@ -108,7 +108,7 @@ class RustCompiler(typeProvider: ClassTypeProvider, config: RuntimeConfig)
     out.puts
   }
 
-  override def runRead(): Unit = {
+  override def runRead(name: List[String]): Unit = {
 
   }
 
@@ -400,7 +400,7 @@ class RustCompiler(typeProvider: ClassTypeProvider, config: RuntimeConfig)
 
   override def switchCaseStart(condition: Ast.expr): Unit = {
     if (switchIfs) {
-      out.puts(s"elss if ${switchCmpExpr(condition)} {")
+      out.puts(s"else if ${switchCmpExpr(condition)} {")
       out.inc
     } else {
       out.puts(s"${expression(condition)} => {")
@@ -544,7 +544,7 @@ class RustCompiler(typeProvider: ClassTypeProvider, config: RuntimeConfig)
 
       case at: ArrayType => s"Vec<${kaitaiType2NativeType(at.elType)}>"
 
-      case KaitaiStreamType => s"Option<Box<KaitaiStream>>"
+      case KaitaiStreamType | OwnedKaitaiStreamType => s"Option<Box<KaitaiStream>>"
       case KaitaiStructType | CalcKaitaiStructType => s"Option<Box<KaitaiStruct>>"
 
       case st: SwitchType => kaitaiType2NativeType(st.combinedType)
@@ -580,7 +580,7 @@ class RustCompiler(typeProvider: ClassTypeProvider, config: RuntimeConfig)
 
       case ArrayTypeInStream(inType) => "vec!()"
 
-      case KaitaiStreamType => "None"
+      case KaitaiStreamType | OwnedKaitaiStreamType => "None"
       case KaitaiStructType => "None"
 
       case _: SwitchType => ""

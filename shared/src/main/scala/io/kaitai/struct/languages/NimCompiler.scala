@@ -8,7 +8,7 @@ import io.kaitai.struct.languages.components._
 import io.kaitai.struct.translators.NimTranslator
 import io.kaitai.struct.{ClassTypeProvider, RuntimeConfig, Utils}
 
-class NimCompiler(val typeProvider: ClassTypeProvider, config: RuntimeConfig)
+class NimCompiler(typeProvider: ClassTypeProvider, config: RuntimeConfig)
   extends LanguageCompiler(typeProvider, config)
     with SingleOutputFile
     with EveryReadIsExpression
@@ -111,24 +111,18 @@ class NimCompiler(val typeProvider: ClassTypeProvider, config: RuntimeConfig)
         }
         s"$srcExpr.processRotateLeft(int($expr))"
       case ProcessCustom(name, args) =>
-        val namespace = name.init.mkString("/")
-        val procPath = namespace + (if (namespace.nonEmpty) "/" else "") + name.last
-        val procName = camelCase(name.last, false)
-        importList.add(config.nimOpaque + procPath)
-        s"$procName($srcExpr, ${args.map(expression).mkString(", ")})"
+        val namespace = name.head
+        val procPath = name.mkString(".")
+        importList.add(namespace)
+        s"$procPath($srcExpr, ${args.map(expression).mkString(", ")})"
     }
     handleAssignment(varDest, expr, rep, false)
   }
   override def attributeDeclaration(attrName: Identifier, attrType: DataType, isNullable: Boolean): Unit = {
-    out.puts(s"${idToStr(attrName)}*: ${ksToNim(attrType)}")
+    out.puts(s"`${idToStr(attrName)}`*: ${ksToNim(attrType)}")
   }
   override def instanceDeclaration(attrName: InstanceIdentifier, attrType: DataType, isNullable: Boolean): Unit = {
-    attrType match {
-      case _: BytesType => out.puts(s"${idToStr(attrName)}*: ${ksToNim(attrType)}")
-      case _: StrType => out.puts(s"${idToStr(attrName)}*: ${ksToNim(attrType)}")
-      case _: ArrayType => out.puts(s"${idToStr(attrName)}*: ${ksToNim(attrType)}")
-      case _ => out.puts(s"${idToStr(attrName)}*: Option[${ksToNim(attrType)}]")
-    }
+    attributeDeclaration(attrName, attrType, isNullable)
   }
   override def attributeReader(attrName: Identifier, attrType: DataType, isNullable: Boolean): Unit = {}
   override def classConstructorHeader(name: List[String], parentType: DataType, rootClassName: List[String], isHybrid: Boolean, params: List[ParamDefSpec]): Unit = {}
@@ -233,7 +227,7 @@ class NimCompiler(val typeProvider: ClassTypeProvider, config: RuntimeConfig)
       case _: ArrayType => out.puts(s"if ${privateMemberName(instName)}.len != 0:")
       case _: StrType => out.puts(s"if ${privateMemberName(instName)}.len != 0:")
       case _: BytesType => out.puts(s"if ${privateMemberName(instName)}.len != 0:")
-      case _ => out.puts(s"if isSome(${privateMemberName(instName)}):")
+      case _ => out.puts(s"if ${privateMemberName(instName)} != nil:")
     }
       out.inc
       instanceReturn(instName, dataType)
@@ -248,12 +242,7 @@ class NimCompiler(val typeProvider: ClassTypeProvider, config: RuntimeConfig)
     out.puts
   }
   override def instanceReturn(instName: InstanceIdentifier, attrType: DataType): Unit = {
-    attrType match {
-      case _: ArrayType => out.puts(s"return ${privateMemberName(instName)}")
-      case _: StrType => out.puts(s"return ${privateMemberName(instName)}")
-      case _: BytesType => out.puts(s"return ${privateMemberName(instName)}")
-      case _ => out.puts(s"return get(${privateMemberName(instName)})")
-    }
+    out.puts(s"return ${privateMemberName(instName)}")
   }
   // def normalIO: String = ???
   override def outFileName(topClassName: String): String = s"$topClassName.nim"
@@ -303,7 +292,7 @@ class NimCompiler(val typeProvider: ClassTypeProvider, config: RuntimeConfig)
     }
   }
   // def results(topClass: ClassSpec): Map[String, String] = ???
-  override def runRead(): Unit = out.puts("read()") // TODO: missing type argument
+  override def runRead(name: List[String]): Unit = out.puts("read()") // TODO: missing type argument
   override def runReadCalc(): Unit = {
     out.puts
     out.puts("if this.isLe:")
@@ -567,7 +556,7 @@ object NimCompiler extends LanguageCompilerStatic
       case _: BytesType => "seq[byte]"
 
       case KaitaiStructType | CalcKaitaiStructType => "KaitaiStruct"
-      case KaitaiStreamType => "KaitaiStream"
+      case KaitaiStreamType | OwnedKaitaiStreamType => "KaitaiStream"
 
       case t: UserType => namespaced(t.classSpec match {
         case Some(cs) => cs.name
@@ -578,7 +567,7 @@ object NimCompiler extends LanguageCompilerStatic
       case at: ArrayType => s"seq[${ksToNim(at.elType)}]"
       case st: SwitchType => ksToNim(st.combinedType)
 
-      case AnyType => "any"
+      case AnyType => "KaitaiStruct"
     }
   }
 }

@@ -9,7 +9,7 @@ import io.kaitai.struct.format._
 import io.kaitai.struct.languages.components._
 import io.kaitai.struct.translators.JavaTranslator
 
-class JavaCompiler(val typeProvider: ClassTypeProvider, config: RuntimeConfig)
+class JavaCompiler(typeProvider: ClassTypeProvider, config: RuntimeConfig)
   extends LanguageCompiler(typeProvider, config)
     with SingleOutputFile
     with UpperCamelCaseClasses
@@ -161,7 +161,7 @@ class JavaCompiler(val typeProvider: ClassTypeProvider, config: RuntimeConfig)
     params.foreach((p) => handleAssignmentSimple(p.id, paramName(p.id)))
   }
 
-  override def runRead(): Unit =
+  override def runRead(name: List[String]): Unit =
     out.puts("_read();")
 
   override def runReadCalc(): Unit = {
@@ -436,6 +436,12 @@ class JavaCompiler(val typeProvider: ClassTypeProvider, config: RuntimeConfig)
   override def handleAssignmentTempVar(dataType: DataType, id: String, expr: String): Unit =
     out.puts(s"${kaitaiType2JavaType(dataType)} $id = $expr;")
 
+  override def blockScopeHeader: Unit = {
+    out.puts("{")
+    out.inc
+  }
+  override def blockScopeFooter: Unit = universalFooter
+
   override def parseExpr(dataType: DataType, assignType: DataType, io: String, defEndian: Option[FixedEndian]): String = {
     val expr = dataType match {
       case t: ReadableType =>
@@ -680,12 +686,12 @@ class JavaCompiler(val typeProvider: ClassTypeProvider, config: RuntimeConfig)
 
     if (enumColl.size > 1) {
       enumColl.dropRight(1).foreach { case (id, label) =>
-        out.puts(s"${value2Const(label)}(${long2str(id)}),")
+        out.puts(s"${value2Const(label)}(${translator.doIntLiteral(id)}),")
       }
     }
     enumColl.last match {
       case (id, label) =>
-        out.puts(s"${value2Const(label)}(${long2str(id)});")
+        out.puts(s"${value2Const(label)}(${translator.doIntLiteral(id)});")
     }
 
     out.puts
@@ -716,14 +722,6 @@ class JavaCompiler(val typeProvider: ClassTypeProvider, config: RuntimeConfig)
 
   def value2Const(s: String) = Utils.upperUnderscoreCase(s)
 
-  def long2str(l: Long): String = {
-    if (l.isValidInt) {
-      l.toString()
-    } else {
-      l.toString() + "L"
-    }
-  }
-
   def idToStr(id: Identifier): String = {
     id match {
       case SpecialIdentifier(name) => name
@@ -749,13 +747,13 @@ class JavaCompiler(val typeProvider: ClassTypeProvider, config: RuntimeConfig)
     attrId: Identifier,
     attrType: DataType,
     checkExpr: Ast.expr,
-    errName: String,
+    err: KSError,
     errArgs: List[Ast.expr]
   ): Unit = {
     val errArgsStr = errArgs.map(translator.translate).mkString(", ")
     out.puts(s"if (!(${translator.translate(checkExpr)})) {")
     out.inc
-    out.puts(s"throw new $errName($errArgsStr);")
+    out.puts(s"throw new ${ksErrorName(err)}($errArgsStr);")
     out.dec
     out.puts("}")
   }
@@ -810,7 +808,7 @@ object JavaCompiler extends LanguageCompilerStatic
       case _: BytesType => "byte[]"
 
       case AnyType => "Object"
-      case KaitaiStreamType => kstreamName
+      case KaitaiStreamType | OwnedKaitaiStreamType => kstreamName
       case KaitaiStructType | CalcKaitaiStructType => kstructName
 
       case t: UserType => types2class(t.name)
@@ -854,7 +852,7 @@ object JavaCompiler extends LanguageCompilerStatic
       case _: BytesType => "byte[]"
 
       case AnyType => "Object"
-      case KaitaiStreamType => kstreamName
+      case KaitaiStreamType | OwnedKaitaiStreamType => kstreamName
       case KaitaiStructType | CalcKaitaiStructType => kstructName
 
       case t: UserType => types2class(t.name)
